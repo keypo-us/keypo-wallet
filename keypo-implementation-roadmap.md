@@ -344,85 +344,86 @@ This confirms the on-chain side works before adding Rust client complexity.
 
 ---
 
-## Phase 2 — Rust Crate Scaffolding (keypo-wallet)
+## Phase 2 — Rust Crate Scaffolding (keypo-wallet) ✅ COMPLETE
 
 **Goal:** Set up the Rust project structure with all types, traits, and the `KeypoSigner` subprocess wrapper. No chain interaction yet.
 
-**Duration:** 2–3 days
+**Status:** Complete. 51 tests pass (41 lib + 7 bin + 3 integration). All modules implemented. CLI parses all arguments.
 
 **Depends on:** Phase 0 (keypo-signer-cli JSON format confirmed and verified, monorepo set up).
 
 **Runs in parallel with:** Phase 1 (contract work). No dependency on the deployed contract.
 
-### 2.1 Project Setup
+### 2.1 Project Setup ✅
 
-- Set up `keypo-wallet/Cargo.toml` with lib + binary targets
-- Add all dependencies from keypo-wallet spec §4.1
-- Create module structure per spec §4.2
+- `Cargo.toml` updated with `test-utils` feature (enables `MockSigner` via optional `p256` dep), `tempfile` dev-dep, self dev-dep with `test-utils` feature for integration tests
+- Module structure: `error`, `types`, `traits`, `impls`, `signer`, `state`, `paymaster`
 
-### 2.2 Core Types and Errors
+### 2.2 Core Types and Errors ✅
 
-Implement `types.rs` and `error.rs` from the spec. These are pure data structures with serde derives — no logic, no dependencies beyond alloy primitives.
+- `error.rs` — `Error` enum with 12 variants via `thiserror`, `Result<T>` type alias
+- `types.rs` — 7 domain types: `P256PublicKey`, `P256Signature`, `Call`, `KeyInfo`, `ChainDeployment`, `AccountRecord`, `ChainConfig`
+- `KeyInfo` includes `label()` convenience method to strip `com.keypo.signer.` prefix
+- 8 unit tests (serde roundtrips, B256 hex format, KeyInfo deserialization from JSON-FORMAT.md)
 
-**Note:** `AccountRecord` must track all chains the smart account has been deployed and initialized on, not just a single chain. See keypo-wallet spec §4.3 for the multi-chain `AccountRecord` and `ChainDeployment` types.
+### 2.3 `AccountImplementation` Trait ✅
 
-### 2.3 `AccountImplementation` Trait
+- `traits.rs` — 8-method trait with default `encode_webauthn_signature` returning `None`
 
-Implement `traits.rs` with the full trait definition from spec §3. This is the central abstraction.
+### 2.4 `KeypoAccountImpl` ✅
 
-### 2.4 `KeypoAccountImpl`
+- `impls/keypo_account.rs` — ABI encoding via alloy `sol!` macro matching the deployed contract
+- `from_deployments_dir(path)` reads `deployments/*.json` files (parses `chainId` + `address`)
+- ERC-7821 batch mode `0x01` in byte[0] (matches `KeypoAccount4337.t.sol`)
+- WebAuthn encoding uses `abi_encode_params()` (NOT `abi_encode()`) — flat tuple matching `P256Helper.sol:122`
+- 14 unit tests including roundtrips, known vectors, deployment dir loading, and error propagation
 
-Implement the default trait implementation in `impls/keypo_account.rs`. This requires:
+**Implementation finding:** `alloy-sol-types` 1.5.7 `abi_decode()` takes 1 argument (no `validate: bool` parameter). This differs from earlier alloy versions referenced in some documentation.
 
-- The ABI from Phase 1.5 (or hardcoded function selectors if the ABI isn't ready yet — Phase 1 runs in parallel)
-- ERC-7821 encoding logic for single and batch calls
-- **BUG FIX:** Mode `0x00` is invalid for ERC-7821. Single calls must use batch mode `0x01` with a 1-element array. Fix `encode_execute` to use mode `0x01` and wrap the single call as a 1-element batch. Remove `encode_execute` / `encode_execute_batch` distinction — there is only `encode_execute` which always uses batch mode.
+### 2.5 `KeypoSigner` Wrapper ✅
 
-Write unit tests for encode/decode roundtrips.
+- `signer.rs` — `P256Signer` trait (named to avoid collision with `alloy::signers::Signer`)
+- `KeypoSigner` subprocess wrapper with `run_command` helper, parses JSON output per `JSON-FORMAT.md`
+- `parse_public_key` — validates `0x04` prefix, splits 128 hex chars into qx/qy
+- `MockSigner` — gated on `#[cfg(any(test, feature = "test-utils"))]`, uses `p256` crate with low-S normalization
+- `MockSigner` supports `add_key`, `add_deterministic_key` (same seed → same key), implements full `P256Signer` trait
+- 6 unit tests (public key parsing valid/invalid, sign response parsing, mock signer create+sign, deterministic keys)
 
-### 2.5 `KeypoSigner` Wrapper
+### 2.6 `StateStore` ✅
 
-Implement `signer.rs` per spec §4.4. The wrapper must parse keypo-signer-cli's JSON output as documented in [SPEC.md](https://github.com/keypo-us/keypo-signer-cli/blob/main/SPEC.md) and verified in Phase 0.3.
+- `state.rs` — JSON-backed persistence at `~/.keypo/accounts.json`
+- `open()` creates dir (mode 0o700) and file on first use; corrupt files return `Error::StateFormat`
+- `add_chain_deployment` creates or appends; rejects duplicate chain_id with `Error::DuplicateDeployment`
+- Atomic save via write-to-tmp + `fs::rename`
+- 9 unit tests (create from scratch, reopen, corrupt file, CRUD, duplicate rejection, save/reload roundtrip)
 
-Write unit tests with mocked subprocess output (mock the `Command` execution, not the actual binary).
+### 2.7 ERC-7677 Paymaster Client ✅
 
-Also implement the `MockSigner` for test environments without Secure Enclave access.
+- `paymaster.rs` — types only (no HTTP calls — deferred to Phase 4)
+- `PaymasterClient` with `build_stub_request` / `build_data_request` builders
+- `PaymasterUserOp` — unpacked v0.7 UserOp with `#[serde(rename_all = "camelCase")]`
+- chain_id encoded as hex string per ERC-7677 (e.g., 84532 → `"0x14a34"`)
+- 4 unit tests (request serialization, response deserialization, chain_id hex format)
 
-### 2.6 `StateStore`
+### 2.8 CLI Argument Parsing ✅
 
-Implement `state.rs` per spec §4.9. Pure file I/O and JSON serialization. Unit tests for CRUD operations, duplicate detection, file creation on first write.
+- `src/bin/main.rs` — clap derive with 5 subcommands: `Setup`, `Send`, `Batch`, `Info`, `Balance`
+- All args match spec §5.1 including defaults (`--key-policy biometric`, `--impl-name KeypoAccount`)
+- All handlers print `"<command>: not implemented"`
+- 7 unit tests (all-args parsing for each subcommand, defaults, missing required `--key`)
 
-The state store must support multi-chain account records — an account with a given key label can be deployed on multiple chains.
+### 2.9 Automated Tests ✅ — 51/51 Pass
 
-### 2.7 ERC-7677 Paymaster Client
-
-Implement the ERC-7677 paymaster interface as part of `BundlerClient` (or a small companion module):
-
-- `pm_getPaymasterStubData(userOp, entryPoint, chainId, context)` — returns stub paymaster data for gas estimation.
-- `pm_getPaymasterData(userOp, entryPoint, chainId, context)` — returns real paymaster data for submission.
-
-The implementation takes a paymaster URL and an opaque `serde_json::Value` context (forwarded as-is to the paymaster). No trait needed — this single implementation works across Pimlico, Coinbase, Alchemy, and any ERC-7677 compliant provider.
-
-### 2.8 CLI Argument Parsing
-
-Set up `src/bin/main.rs` with clap derive macros for all commands from spec §5.1, including:
-
-- `setup` with `--key-policy` flag (open / passcode / biometric) to select keypo-signer-cli key protection level
-- `balance` with optional `--chain`, `--token`, and `--query` flags for GraphQL-style filtering
-
-Commands call stub functions that print "not implemented" — wiring comes in later phases.
-
-### 2.9 Automated Tests — All Must Pass
-
-```bash
-cargo test
+```
+41 lib tests + 7 bin tests + 3 integration tests = 51 total
 ```
 
-Tests for: types (including multi-chain AccountRecord), trait impls (especially the ERC-7821 mode `0x01` encoding), signer wrapper (against known JSON output from SPEC.md), state store (multi-chain CRUD), ERC-7677 request/response serialization, CLI argument parsing.
+Integration tests (`tests/integration_scaffolding.rs`):
+1. `KeypoAccountImpl` encode/decode roundtrip (initialize + execute with 2-call batch)
+2. `StateStore` full lifecycle (open, add 2 chains, save, reload, verify)
+3. `MockSigner` create → get_public_key → sign → encode_signature via `KeypoAccountImpl` → verify 64 bytes
 
-**Assume all code is wrong. Every encode/decode path, every serialization format, every edge case must have a test.**
-
-**Milestone: `cargo build` succeeds. `cargo test` passes all unit tests. CLI parses all arguments.**
+**Milestone: `cargo build` succeeds with no warnings. `cargo test` passes all 51 tests. CLI parses all arguments and prints stub output.**
 
 ---
 
@@ -787,7 +788,7 @@ After all automated CI tests pass:
 | **0 — Preflight** | 1–2 days | — | Accounts, secrets, monorepo, migrated repos, signer verified | ✅ Complete |
 | **1 — Contract** | 3–5 days | ↕ Phase 2 | Deployed + verified `KeypoAccount` on testnet | ✅ Complete — 30/30 tests, deployed at `0x6d15...8E43` |
 | **1.5 — Fast Deploy** | 0.5–1 day | ↕ Phase 1 tests | Minimal deployment for Rust work to begin | ✅ Superseded — full Phase 1 completed |
-| **2 — Crate Scaffold** | 2–3 days | ↕ Phase 1 | Rust crate with types, traits, signer, state, ERC-7677 | `cargo test` passes |
+| **2 — Crate Scaffold** | 2–3 days | ↕ Phase 1 | Rust crate with types, traits, signer, state, ERC-7677 | ✅ Complete — 51/51 tests, all modules implemented |
 | **3 — Setup Flow** | 3–5 days | — | `keypo-wallet setup` working on testnet + mock signer test account | Automated tests pass, then manual verification |
 | **4 — Bundler** | 3–5 days | — | ERC-7769 BundlerClient + ERC-7677 paymaster + UserOp | Automated tests pass, mock-signed submission passes on-chain |
 | **5 — Signing + CLI** | 2–3 days | — | Full `send`, `batch`, `balance` commands | Automated tests pass, then first real P-256 tx |
@@ -795,7 +796,7 @@ After all automated CI tests pass:
 
 **Total: 16–27 days** (roughly 3.5–6 weeks with buffer for unknowns)
 
-Phases 0, 1, and 1.5 are complete. Phase 2 can proceed immediately — the contract is deployed and the ABI is exported to `keypo-wallet/abi/KeypoAccount.json`. Everything after Phase 2 is sequential because each phase depends on artifacts from the previous one.
+Phases 0, 1, 1.5, and 2 are complete. Phase 3 can proceed immediately — the contract is deployed at `0x6d1566f9aAcf9c06969D7BF846FA090703A38E43`, the ABI is exported to `keypo-wallet/abi/KeypoAccount.json`, and the Rust crate scaffolding is in place with all types, traits, encoding logic, signer wrapper, and state persistence. Everything after Phase 2 is sequential because each phase depends on artifacts from the previous one.
 
 ---
 

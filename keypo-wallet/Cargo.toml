@@ -26,3 +26,11 @@ dirs = "6"
 tracing = "0.1"
 reqwest = { version = "0.12", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
+p256 = { version = "0.13", features = ["ecdsa"], optional = true }
+
+[features]
+test-utils = ["dep:p256"]
+
+[dev-dependencies]
+tempfile = "3"
+keypo-wallet = { path = ".", features = ["test-utils"] }
