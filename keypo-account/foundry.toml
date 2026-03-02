@@ -1,0 +1,30 @@
+# keypo-account — Foundry configuration
+#
+# Foundry auto-loads .env from the working directory.
+# The .env symlink in this directory points to the repo root's .env.
+#
+# Remappings active after: forge install OpenZeppelin/openzeppelin-contracts
+# Full initialization deferred until Foundry is installed:
+#   forge init --no-commit
+#   forge install OpenZeppelin/openzeppelin-contracts --no-commit
+
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.28"
+evm_version = "prague"           # Required for EIP-7702 support in tests
+optimizer = true
+optimizer_runs = 200
+
+remappings = [
+    "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+]
+
+[rpc_endpoints]
+base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+base = "${BASE_RPC_URL}"
+
+[etherscan]
+base_sepolia = { key = "${BASESCAN_API_KEY}", url = "https://api-sepolia.basescan.org/api" }
+base = { key = "${BASESCAN_API_KEY}", url = "https://api.basescan.org/api" }
