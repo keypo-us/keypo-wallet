@@ -1,3 +1,6 @@
 [submodule "keypo-account/lib/openzeppelin-contracts"]
 	path = keypo-account/lib/openzeppelin-contracts
 	url = https://github.com/OpenZeppelin/openzeppelin-contracts
+[submodule "keypo-account/lib/forge-std"]
+	path = keypo-account/lib/forge-std
+	url = https://github.com/foundry-rs/forge-std

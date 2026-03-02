@@ -19,6 +19,7 @@ optimizer_runs = 200
 
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+    "forge-std/=lib/forge-std/src/",
 ]
 
 [rpc_endpoints]
