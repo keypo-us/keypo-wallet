@@ -7,7 +7,7 @@
 # Foundry
 keypo-account/out/
 keypo-account/cache/
-keypo-account/lib/
+keypo-account/foundry.lock
 keypo-account/broadcast/
 keypo-account/.env
 
