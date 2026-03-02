@@ -34,8 +34,11 @@ contract Deploy is Script {
         );
         vm.stopBroadcast();
 
-        require(success && result.length == 32, "CREATE2 deployment failed");
-        address deployed = address(uint160(uint256(bytes32(result))));
+        require(success && result.length >= 20, "CREATE2 deployment failed");
+        address deployed;
+        assembly {
+            deployed := mload(add(result, mload(result)))
+        }
         require(deployed == expected, "Address mismatch");
 
         console.log("Deployed at:", deployed);

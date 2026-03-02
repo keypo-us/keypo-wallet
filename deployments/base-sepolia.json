@@ -1,0 +1,13 @@
+{
+  "contract": "KeypoAccount",
+  "chainId": 84532,
+  "address": "0x6d1566f9aAcf9c06969D7BF846FA090703A38E43",
+  "deployer": "CREATE2 via Safe Singleton Factory (0x4e59b44847b379578588920cA78FbF26c0B4956C)",
+  "salt": "0x485385d3c7638f64c53d34b1dae5f9a8eb64fcc5ffa9fef4779e41a51d7e53dc",
+  "initCodeHash": "0xb5f407286c0d03867e09387e89fe4c268bd01cc883a281e0073838bc6081888e",
+  "runtimeCodeHash": "0x7af79db7b41ae7199b9cf778c17193fa6222350724bba13d55db9acb3b0e2816",
+  "txHash": "0x7ba79964f2399c39f141d0862fe1ebaeaefc2ff283114de20a5d0afb08cbd032",
+  "blockNumber": 38360751,
+  "verified": true,
+  "basescanUrl": "https://sepolia.basescan.org/address/0x6d1566f9aacf9c06969d7bf846fa090703a38e43"
+}
