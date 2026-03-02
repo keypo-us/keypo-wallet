@@ -24,7 +24,7 @@ This project lives in the `keypo-wallet/` directory of the `keypo-wallet` monore
 - **Paymaster-agnostic (ERC-7677).** A single ERC-7677 implementation works across Pimlico, Coinbase, Alchemy, and any compliant provider. No `PaymasterProvider` trait needed.
 - **Bundler-only submission.** All post-setup transactions go through ERC-4337 bundlers. This enables gas sponsorship via paymasters.
 - **Subprocess signing.** The crate calls `keypo-signer` as a subprocess. No FFI, no framework dependencies.
-- **Configurable key policy.** During setup, users choose the Secure Enclave key protection level: none, passcode, or biometric (Touch ID). This maps to keypo-signer-cli's `--policy` flag.
+- **Configurable key policy.** During setup, users choose the Secure Enclave key protection level: open, passcode, or biometric (Touch ID). This maps to keypo-signer-cli's `--policy` flag.
 - **Testnet-first.** Initial development and testing targets Base Sepolia.
 
 ### 1.2 Relationship to keypo-account
@@ -42,7 +42,7 @@ This crate consumes those outputs but does not depend on the Solidity source. Al
 The `keypo-signer-cli` Swift CLI (in the same monorepo, migrated from [github.com/keypo-us/keypo-signer-cli](https://github.com/keypo-us/keypo-signer-cli)) provides Secure Enclave P-256 key management and signing. The canonical specification of its commands, output format, and key policies is in its [SPEC.md](https://github.com/keypo-us/keypo-signer-cli/blob/main/SPEC.md).
 
 Key policies supported by keypo-signer-cli:
-- **none** — No biometric or passcode required. Key is accessible without user interaction.
+- **open** — No biometric or passcode required. Key is accessible without user interaction.
 - **passcode** — Device passcode required before each signing operation.
 - **biometric** — Touch ID (biometric) required before each signing operation.
 
@@ -229,10 +229,9 @@ Implements the trait for the `KeypoAccount` contract from the `keypo-account` Fo
 
 ```toml
 [dependencies]
-alloy = { version = "0.12", features = [
+alloy = { version = "1.7", features = [
     "provider-http",
     "signer-local",      # ephemeral secp256k1 during setup
-    "eip7702",           # type-4 transaction construction
     "sol-types",         # ABI encoding
     "rpc-types",
     "contract",
@@ -244,7 +243,7 @@ clap = { version = "4", features = ["derive"] }
 zeroize = "1"
 hex = "0.4"
 thiserror = "2"
-dirs = "5"
+dirs = "6"
 tracing = "0.1"
 reqwest = { version = "0.12", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -322,7 +321,7 @@ struct ChainDeployment {
 struct AccountRecord {
     address: Address,              // The EOA address (same on all chains)
     key_label: String,             // keypo-signer key label
-    key_policy: String,            // "none", "passcode", or "biometric"
+    key_policy: String,            // "open", "passcode", or "biometric"
     public_key: P256PublicKey,
     chains: Vec<ChainDeployment>,  // All chains where this account is deployed
     created_at: String,            // When the first deployment was created
@@ -365,8 +364,8 @@ struct ChainConfig {
 ///   Test: Mock subprocess failing (key not found), verify error
 ///
 /// create_key(label, policy) -> Result<P256PublicKey>
-///   Calls: keypo-signer create <label> --policy <policy> --format json
-///   Policy: "none", "passcode", or "biometric"
+///   Calls: keypo-signer create --label <label> --policy <policy> --format json
+///   Policy: "open", "passcode", or "biometric"
 ///   Returns the new key's public key
 ///   Test: Mock subprocess returning valid creation response
 ///   Test: Mock subprocess with duplicate label, verify error
@@ -406,7 +405,7 @@ struct ChainConfig {
 /// - implementation: AccountImplementation trait object
 /// - signer_cli: KeypoSigner subprocess wrapper
 /// - key_label: keypo-signer key label
-/// - key_policy: "none", "passcode", or "biometric"
+/// - key_policy: "open", "passcode", or "biometric"
 /// - state: mutable StateStore for persistence
 ///
 /// Steps:
@@ -646,7 +645,7 @@ Persistent local state at `~/.keypo/accounts.json`. Multi-chain aware — each a
 ```
 keypo-wallet setup
     --key <LABEL>                 # keypo-signer key label (required)
-    --key-policy <POLICY>         # Key protection: none | passcode | biometric (default: biometric)
+    --key-policy <POLICY>         # Key protection: open | passcode | biometric (default: biometric)
     --rpc <URL>                   # RPC endpoint (required)
     --bundler <URL>               # Bundler endpoint (required)
     --chain-id <ID>               # Chain ID (auto-detected from RPC if omitted)
@@ -775,7 +774,7 @@ Users choose the Secure Enclave key protection level during `keypo-wallet setup`
 
 | Policy | Flag | Behavior |
 |--------|------|----------|
-| None | `--key-policy none` | No authentication required for signing. Fastest, least secure. |
+| Open | `--key-policy open` | No authentication required for signing. Fastest, least secure. |
 | Passcode | `--key-policy passcode` | Device passcode required before each sign operation. |
 | Biometric | `--key-policy biometric` | Touch ID required before each sign operation. Default and recommended. |
 

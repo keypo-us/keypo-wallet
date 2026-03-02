@@ -155,9 +155,9 @@ Before any Rust client work begins, verify that keypo-signer-cli works correctly
 
 1. Install keypo-signer-cli via Homebrew (`brew tap keypo-us/tap && brew install keypo-signer`) or build from source in the monorepo.
 2. Create a test key with each supported policy:
-   - `keypo-signer create test-none --policy none` (no biometric, no passcode)
-   - `keypo-signer create test-passcode --policy passcode`
-   - `keypo-signer create test-biometric --policy biometric` (Touch ID)
+   - `keypo-signer create --label test-open --policy open` (no biometric, no passcode)
+   - `keypo-signer create --label test-passcode --policy passcode`
+   - `keypo-signer create --label test-biometric --policy biometric` (Touch ID)
 3. Run `keypo-signer info <label> --format json` for each key. Document exact JSON field names and encoding (especially `publicKey` format — expected: `0x04 || qx || qy`, 65 bytes hex-encoded).
 4. Run `keypo-signer sign <hex-digest> --key <label> --format json` for each key. Document exact JSON field names (`r`, `s`) and encoding (expected: hex-encoded 32-byte big-endian, low-S normalized).
 5. Confirm `keypo-signer list --format json` returns all keys with labels and policies.
@@ -193,7 +193,7 @@ All four blocking checks against Base Sepolia have been confirmed:
 - All accounts provisioned and secrets stored in `.env` + GitHub Actions.
 - Monorepo `keypo-wallet/` structure created; keypo-signer-cli and homebrew-tap migrated in.
 - All GitHub Actions workflows ported and functional (Swift CI, release, Homebrew update).
-- keypo-signer-cli verified: JSON output format documented for `info`, `sign`, `list`. All three key policies tested (none, passcode, biometric).
+- keypo-signer-cli verified: JSON output format documented for `info`, `sign`, `list`. All three key policies tested (open, passcode, biometric).
 - Target chain confirmed: Base Sepolia (all checks VERIFIED).
 - All toolchain blocking checks pass.
 - No architecture changes needed — proceed to Phases 1 and 2.
@@ -380,7 +380,7 @@ The implementation takes a paymaster URL and an opaque `serde_json::Value` conte
 
 Set up `src/bin/main.rs` with clap derive macros for all commands from spec §5.1, including:
 
-- `setup` with `--key-policy` flag (none / passcode / biometric) to select keypo-signer-cli key protection level
+- `setup` with `--key-policy` flag (open / passcode / biometric) to select keypo-signer-cli key protection level
 - `balance` with optional `--chain`, `--token`, and `--query` flags for GraphQL-style filtering
 
 Commands call stub functions that print "not implemented" — wiring comes in later phases.
@@ -452,7 +452,7 @@ This is the most alloy-specific piece. Implement:
 
 Wire together the complete `account::setup` function from spec §4.5:
 
-1. `keypo-signer create` or `keypo-signer info` → P-256 public key (with user's chosen `--key-policy`: none, passcode, or biometric)
+1. `keypo-signer create` or `keypo-signer info` → P-256 public key (with user's chosen `--key-policy`: open, passcode, or biometric)
 2. Verify implementation on-chain
 3. Generate ephemeral EOA
 4. Wait for funding — **two paths depending on context:**
@@ -470,7 +470,7 @@ Wire together the complete `account::setup` function from spec §4.5:
 Connect the CLI's `setup` subcommand to `account::setup`. Handle:
 
 - Argument parsing → `ChainConfig` construction
-- `--key-policy` flag → pass to keypo-signer for key creation (none / passcode / biometric)
+- `--key-policy` flag → pass to keypo-signer for key creation (open / passcode / biometric)
 - `AccountImplementation` selection (only `KeypoAccountImpl` for now)
 - Progress output (funding address, waiting, tx hash, confirmation)
 - State persistence
