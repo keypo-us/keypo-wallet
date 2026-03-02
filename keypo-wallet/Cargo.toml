@@ -1,0 +1,28 @@
+[package]
+name = "keypo-wallet"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "keypo-wallet"
+path = "src/bin/main.rs"
+
+[dependencies]
+alloy = { version = "1.7", features = [
+    "provider-http", "signer-local", "sol-types",
+    "rpc-types", "contract",
+] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
+zeroize = "1"
+hex = "0.4"
+thiserror = "2"
+dirs = "6"
+tracing = "0.1"
+reqwest = { version = "0.12", features = ["json"] }
+chrono = { version = "0.4", features = ["serde"] }
