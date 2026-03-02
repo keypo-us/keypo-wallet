@@ -1,0 +1,31 @@
+name: Swift CI
+
+on:
+  push:
+    paths:
+      - 'keypo-signer-cli/**'
+    branches: [main]
+  pull_request:
+    paths:
+      - 'keypo-signer-cli/**'
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: keypo-signer-cli
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log Swift version
+        run: swift --version
+
+      - name: Build
+        run: swift build
+
+      - name: Run tests
+        run: swift test
