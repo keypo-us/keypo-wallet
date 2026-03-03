@@ -40,6 +40,21 @@ pub enum Error {
     #[error("duplicate deployment: key {key_label} already deployed on chain {chain_id}")]
     DuplicateDeployment { key_label: String, chain_id: u64 },
 
+    #[error("funding timeout: waited {0}s for {1}")]
+    FundingTimeout(u64, alloy::primitives::Address),
+
+    #[error("implementation not deployed at {0}")]
+    ImplementationNotDeployed(alloy::primitives::Address),
+
+    #[error("delegation failed: expected {expected}, got {got}")]
+    DelegationFailed { expected: String, got: String },
+
+    #[error("transaction failed: {0}")]
+    TransactionFailed(String),
+
+    #[error("multi-chain setup not supported: key '{0}' already has an account")]
+    MultiChainNotSupported(String),
+
     #[error("{0}")]
     Other(String),
 }

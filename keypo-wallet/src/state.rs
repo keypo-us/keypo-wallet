@@ -106,6 +106,13 @@ impl StateStore {
             .iter_mut()
             .find(|a| a.key_label == key_label)
         {
+            if acct.address != address {
+                return Err(Error::Other(format!(
+                    "address mismatch: account '{}' has address {} but setup produced {}. \
+                     Multi-chain setup from separate sessions is not yet supported.",
+                    key_label, acct.address, address
+                )));
+            }
             if acct.chains.iter().any(|c| c.chain_id == chain_id) {
                 return Err(Error::DuplicateDeployment {
                     key_label: key_label.to_string(),
@@ -159,7 +166,7 @@ mod tests {
             implementation: address!("0x6d1566f9aAcf9c06969D7BF846FA090703A38E43"),
             implementation_name: "KeypoAccount".into(),
             entry_point: address!("0x0000000071727De22E5E9d8BAf0edAc6f37da032"),
-            bundler_url: "https://bundler.example.com".into(),
+            bundler_url: Some("https://bundler.example.com".into()),
             paymaster_url: None,
             rpc_url: "https://sepolia.base.org".into(),
             deployed_at: "2026-03-01T00:00:00Z".into(),

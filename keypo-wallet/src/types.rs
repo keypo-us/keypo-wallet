@@ -49,7 +49,7 @@ pub struct ChainDeployment {
     pub implementation: Address,
     pub implementation_name: String,
     pub entry_point: Address,
-    pub bundler_url: String,
+    pub bundler_url: Option<String>,
     pub paymaster_url: Option<String>,
     pub rpc_url: String,
     pub deployed_at: String,
@@ -69,7 +69,7 @@ pub struct AccountRecord {
 pub struct ChainConfig {
     pub chain_id: u64,
     pub rpc_url: String,
-    pub bundler_url: String,
+    pub bundler_url: Option<String>,
     pub paymaster_url: Option<String>,
 }
 
@@ -116,7 +116,7 @@ mod tests {
         let cfg = ChainConfig {
             chain_id: 84532,
             rpc_url: "https://sepolia.base.org".into(),
-            bundler_url: "https://bundler.example.com".into(),
+            bundler_url: Some("https://bundler.example.com".into()),
             paymaster_url: Some("https://paymaster.example.com".into()),
         };
         let json = serde_json::to_string(&cfg).unwrap();
@@ -140,7 +140,7 @@ mod tests {
                     implementation: Address::repeat_byte(0x6D),
                     implementation_name: "KeypoAccount".into(),
                     entry_point: Address::repeat_byte(0x71),
-                    bundler_url: "https://bundler1.example.com".into(),
+                    bundler_url: Some("https://bundler1.example.com".into()),
                     paymaster_url: None,
                     rpc_url: "https://sepolia.base.org".into(),
                     deployed_at: "2026-03-01T00:00:00Z".into(),
@@ -150,7 +150,7 @@ mod tests {
                     implementation: Address::repeat_byte(0x6D),
                     implementation_name: "KeypoAccount".into(),
                     entry_point: Address::repeat_byte(0x71),
-                    bundler_url: "https://bundler2.example.com".into(),
+                    bundler_url: Some("https://bundler2.example.com".into()),
                     paymaster_url: Some("https://paymaster.example.com".into()),
                     rpc_url: "https://eth.example.com".into(),
                     deployed_at: "2026-03-02T00:00:00Z".into(),
