@@ -11,8 +11,8 @@ pub mod traits;
 pub mod transaction;
 pub mod types;
 
+pub use bundler::{BundlerClient, UserOp};
 pub use error::{Error, Result};
 pub use impls::KeypoAccountImpl;
 pub use traits::AccountImplementation;
-pub use bundler::{BundlerClient, UserOp};
 pub use transaction::ExecuteResult;

@@ -227,8 +227,7 @@ mod tests {
         assert_eq!(decoded.mode, KeypoAccountImpl::batch_mode());
 
         // Decode the execution data as Vec<Execution>
-        let executions =
-            Vec::<Execution>::abi_decode(&decoded.executionData).unwrap();
+        let executions = Vec::<Execution>::abi_decode(&decoded.executionData).unwrap();
         assert_eq!(executions.len(), 1);
         assert_eq!(executions[0].target, Address::repeat_byte(0xDE));
         assert_eq!(
@@ -251,8 +250,7 @@ mod tests {
         let encoded = imp.encode_execute(&calls);
 
         let decoded = executeCall::abi_decode(&encoded).unwrap();
-        let executions =
-            Vec::<Execution>::abi_decode(&decoded.executionData).unwrap();
+        let executions = Vec::<Execution>::abi_decode(&decoded.executionData).unwrap();
         assert_eq!(executions.len(), 3);
         for (i, exec) in executions.iter().enumerate() {
             assert_eq!(exec.target, Address::repeat_byte(i as u8 + 1));
@@ -265,8 +263,7 @@ mod tests {
         let encoded = imp.encode_execute(&[]);
 
         let decoded = executeCall::abi_decode(&encoded).unwrap();
-        let executions =
-            Vec::<Execution>::abi_decode(&decoded.executionData).unwrap();
+        let executions = Vec::<Execution>::abi_decode(&decoded.executionData).unwrap();
         assert_eq!(executions.len(), 0);
     }
 
@@ -295,8 +292,7 @@ mod tests {
             assert_eq!(b, 0x00);
         }
 
-        let executions =
-            Vec::<Execution>::abi_decode(&decoded.executionData).unwrap();
+        let executions = Vec::<Execution>::abi_decode(&decoded.executionData).unwrap();
         assert_eq!(executions.len(), 1);
         assert_eq!(executions[0].target, Address::from(to_bytes));
         assert_eq!(
@@ -354,10 +350,7 @@ mod tests {
 
         // challengeIndex should point to the '"' before 'challenge'
         let expected_challenge_idx = client_data_json.find("\"challenge\"").unwrap();
-        assert_eq!(
-            decoded.challengeIndex,
-            U256::from(expected_challenge_idx)
-        );
+        assert_eq!(decoded.challengeIndex, U256::from(expected_challenge_idx));
 
         // typeIndex should point to the '"' before 'type'
         let expected_type_idx = client_data_json.find("\"type\"").unwrap();
@@ -371,12 +364,8 @@ mod tests {
     fn encode_webauthn_signature_missing_challenge_returns_none() {
         let imp = test_impl();
         let client_data_json = r#"{"type":"webauthn.get"}"#;
-        let result = imp.encode_webauthn_signature(
-            &[0x01],
-            client_data_json,
-            B256::ZERO,
-            B256::ZERO,
-        );
+        let result =
+            imp.encode_webauthn_signature(&[0x01], client_data_json, B256::ZERO, B256::ZERO);
         assert!(result.is_none());
     }
 

@@ -4,11 +4,11 @@ use std::time::Duration;
 use alloy::primitives::{Address, Bytes, U256};
 use clap::{Parser, Subcommand};
 use keypo_wallet::account::{self, FundingStrategy, SetupConfig, SETUP_FUNDING_AMOUNT};
-use keypo_wallet::AccountImplementation;
 use keypo_wallet::impls::KeypoAccountImpl;
 use keypo_wallet::signer::KeypoSigner;
 use keypo_wallet::state::StateStore;
 use keypo_wallet::types::Call;
+use keypo_wallet::AccountImplementation;
 
 #[derive(Parser)]
 #[command(name = "keypo-wallet", about = "Keypo smart wallet CLI")]
@@ -203,7 +203,18 @@ async fn main() {
             paymaster_policy,
             rpc,
         } => {
-            run_send(key, to, value, data, chain_id, bundler, paymaster, paymaster_policy, rpc).await
+            run_send(
+                key,
+                to,
+                value,
+                data,
+                chain_id,
+                bundler,
+                paymaster,
+                paymaster_policy,
+                rpc,
+            )
+            .await
         }
         Commands::Batch {
             key,
@@ -214,7 +225,16 @@ async fn main() {
             paymaster_policy,
             rpc,
         } => {
-            run_batch(key, calls, chain_id, bundler, paymaster, paymaster_policy, rpc).await
+            run_batch(
+                key,
+                calls,
+                chain_id,
+                bundler,
+                paymaster,
+                paymaster_policy,
+                rpc,
+            )
+            .await
         }
         Commands::Info { key, chain_id } => run_info(key, chain_id).await,
         Commands::Balance {
@@ -233,6 +253,7 @@ async fn main() {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_setup(
     key: String,
     key_policy: String,
@@ -248,7 +269,9 @@ async fn run_setup(
     // Resolve implementation address and chain_id
     let (impl_address, resolved_chain_id, imp) = if let Some(ref addr_str) = implementation {
         // Explicit implementation address provided
-        let addr: Address = addr_str.parse().map_err(|e| format!("invalid --implementation address: {e}"))?;
+        let addr: Address = addr_str
+            .parse()
+            .map_err(|e| format!("invalid --implementation address: {e}"))?;
         let imp = KeypoAccountImpl::new();
         (addr, chain_id, imp)
     } else {
@@ -258,9 +281,14 @@ async fn run_setup(
         } else {
             // Auto-detect chain_id from RPC
             use alloy::providers::{Provider, ProviderBuilder};
-            let url: url::Url = rpc_url.parse().map_err(|e: url::ParseError| format!("invalid RPC URL: {e}"))?;
+            let url: url::Url = rpc_url
+                .parse()
+                .map_err(|e: url::ParseError| format!("invalid RPC URL: {e}"))?;
             let provider = ProviderBuilder::new().connect_http(url);
-            provider.get_chain_id().await.map_err(|e| format!("failed to get chain ID: {e}"))?
+            provider
+                .get_chain_id()
+                .await
+                .map_err(|e| format!("failed to get chain ID: {e}"))?
         };
 
         // Load deployments from deployments/ directory
@@ -320,7 +348,10 @@ fn resolve_account_and_chain(
     paymaster_override: Option<String>,
     rpc_override: Option<String>,
 ) -> std::result::Result<
-    (keypo_wallet::types::AccountRecord, keypo_wallet::types::ChainDeployment),
+    (
+        keypo_wallet::types::AccountRecord,
+        keypo_wallet::types::ChainDeployment,
+    ),
     Box<dyn std::error::Error>,
 > {
     let (account, chain) = if let Some(cid) = chain_id {
@@ -354,6 +385,7 @@ fn resolve_account_and_chain(
     Ok((account, chain))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_send(
     key: String,
     to: String,
@@ -366,16 +398,22 @@ async fn run_send(
     rpc: Option<String>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let state = StateStore::open()?;
-    let (account, chain) = resolve_account_and_chain(&state, &key, chain_id, bundler, paymaster, rpc)?;
+    let (account, chain) =
+        resolve_account_and_chain(&state, &key, chain_id, bundler, paymaster, rpc)?;
 
     let signer = KeypoSigner::new();
     let imp = load_deployments_impl();
 
     // Parse call fields
-    let to_addr: Address = to.parse().map_err(|e| format!("invalid --to address: {e}"))?;
+    let to_addr: Address = to
+        .parse()
+        .map_err(|e| format!("invalid --to address: {e}"))?;
     let call_value: U256 = value.parse().map_err(|e| format!("invalid --value: {e}"))?;
     let call_data = if let Some(ref d) = data {
-        let stripped = d.strip_prefix("0x").or_else(|| d.strip_prefix("0X")).unwrap_or(d);
+        let stripped = d
+            .strip_prefix("0x")
+            .or_else(|| d.strip_prefix("0X"))
+            .unwrap_or(d);
         Bytes::from(hex::decode(stripped).map_err(|e| format!("invalid --data hex: {e}"))?)
     } else {
         Bytes::new()
@@ -388,7 +426,15 @@ async fn run_send(
     };
 
     let pm_context = paymaster_policy.map(|id| serde_json::json!({"sponsorshipPolicyId": id}));
-    let result = keypo_wallet::transaction::execute_with_context(&account, &chain, &[call], &imp, &signer, pm_context).await?;
+    let result = keypo_wallet::transaction::execute_with_context(
+        &account,
+        &chain,
+        &[call],
+        &imp,
+        &signer,
+        pm_context,
+    )
+    .await?;
 
     println!("Transaction sent!");
     println!("  UserOp hash: {}", result.user_op_hash);
@@ -408,7 +454,8 @@ async fn run_batch(
     rpc: Option<String>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let state = StateStore::open()?;
-    let (account, chain) = resolve_account_and_chain(&state, &key, chain_id, bundler, paymaster, rpc)?;
+    let (account, chain) =
+        resolve_account_and_chain(&state, &key, chain_id, bundler, paymaster, rpc)?;
 
     let signer = KeypoSigner::new();
     let imp = load_deployments_impl();
@@ -420,7 +467,10 @@ async fn run_batch(
         .map_err(|e| format!("failed to parse calls JSON: {e}"))?;
 
     let pm_context = paymaster_policy.map(|id| serde_json::json!({"sponsorshipPolicyId": id}));
-    let result = keypo_wallet::transaction::execute_with_context(&account, &chain, &calls, &imp, &signer, pm_context).await?;
+    let result = keypo_wallet::transaction::execute_with_context(
+        &account, &chain, &calls, &imp, &signer, pm_context,
+    )
+    .await?;
 
     println!("Batch transaction sent!");
     println!("  UserOp hash: {}", result.user_op_hash);
@@ -475,14 +525,10 @@ async fn run_balance(
     };
 
     // Resolve chains
-    let chains =
-        query::resolve_chains(&account, chain_id, balance_query.as_ref())?;
+    let chains = query::resolve_chains(&account, chain_id, balance_query.as_ref())?;
 
     // Resolve tokens
-    let tokens = query::resolve_tokens(
-        token.as_deref(),
-        balance_query.as_ref(),
-    )?;
+    let tokens = query::resolve_tokens(token.as_deref(), balance_query.as_ref())?;
 
     // Determine output format: CLI --format > query.format > "table"
     let fmt = format_override
@@ -539,15 +585,13 @@ async fn run_balance(
                     }
                 }
             } else {
-                let token_addr: Address = token_str.parse().map_err(|e| {
-                    format!("invalid token address '{token_str}': {e}")
-                })?;
+                let token_addr: Address = token_str
+                    .parse()
+                    .map_err(|e| format!("invalid token address '{token_str}': {e}"))?;
                 match query::query_erc20_balance(&provider, token_addr, account.address).await {
                     Ok(balance) => {
-                        let decimals =
-                            query::query_erc20_decimals(&provider, token_addr).await;
-                        let symbol =
-                            query::query_erc20_symbol(&provider, token_addr).await;
+                        let decimals = query::query_erc20_decimals(&provider, token_addr).await;
+                        let symbol = query::query_erc20_symbol(&provider, token_addr).await;
                         balances.push(TokenBalance {
                             chain_id: chain.chain_id,
                             token: token_str.clone(),
@@ -779,10 +823,7 @@ mod tests {
 
         match cli.command {
             Commands::Balance {
-                key,
-                token,
-                query,
-                ..
+                key, token, query, ..
             } => {
                 assert_eq!(key, "my-key");
                 assert_eq!(token, Some("0xUSDC".into()));

@@ -232,7 +232,10 @@ mod tests {
         let query = BalanceQuery {
             chains: vec![84532, 1],
             tokens: Some(TokenFilter {
-                include: vec!["ETH".into(), "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into()],
+                include: vec![
+                    "ETH".into(),
+                    "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(),
+                ],
                 exclude: vec![],
                 min_balance: Some("0.001".into()),
             }),

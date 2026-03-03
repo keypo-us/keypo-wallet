@@ -230,7 +230,13 @@ mod tests {
 
         let addr = address!("0x1111111111111111111111111111111111111111");
         store
-            .add_chain_deployment("my-key", "biometric", addr, sample_pubkey(), sample_deployment(84532))
+            .add_chain_deployment(
+                "my-key",
+                "biometric",
+                addr,
+                sample_pubkey(),
+                sample_deployment(84532),
+            )
             .unwrap();
 
         assert_eq!(store.list_accounts().len(), 1);
@@ -246,10 +252,22 @@ mod tests {
 
         let addr = address!("0x1111111111111111111111111111111111111111");
         store
-            .add_chain_deployment("my-key", "biometric", addr, sample_pubkey(), sample_deployment(84532))
+            .add_chain_deployment(
+                "my-key",
+                "biometric",
+                addr,
+                sample_pubkey(),
+                sample_deployment(84532),
+            )
             .unwrap();
         store
-            .add_chain_deployment("my-key", "biometric", addr, sample_pubkey(), sample_deployment(1))
+            .add_chain_deployment(
+                "my-key",
+                "biometric",
+                addr,
+                sample_pubkey(),
+                sample_deployment(1),
+            )
             .unwrap();
 
         assert_eq!(store.list_accounts().len(), 1);
@@ -264,11 +282,22 @@ mod tests {
 
         let addr = address!("0x1111111111111111111111111111111111111111");
         store
-            .add_chain_deployment("my-key", "biometric", addr, sample_pubkey(), sample_deployment(84532))
+            .add_chain_deployment(
+                "my-key",
+                "biometric",
+                addr,
+                sample_pubkey(),
+                sample_deployment(84532),
+            )
             .unwrap();
 
-        let result =
-            store.add_chain_deployment("my-key", "biometric", addr, sample_pubkey(), sample_deployment(84532));
+        let result = store.add_chain_deployment(
+            "my-key",
+            "biometric",
+            addr,
+            sample_pubkey(),
+            sample_deployment(84532),
+        );
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -286,7 +315,13 @@ mod tests {
 
         let addr = address!("0x1111111111111111111111111111111111111111");
         store
-            .add_chain_deployment("my-key", "biometric", addr, sample_pubkey(), sample_deployment(84532))
+            .add_chain_deployment(
+                "my-key",
+                "biometric",
+                addr,
+                sample_pubkey(),
+                sample_deployment(84532),
+            )
             .unwrap();
 
         let (acct, chain) = store.find_account("my-key", 84532).unwrap();
@@ -313,7 +348,13 @@ mod tests {
             let mut store = StateStore::open_at(path.clone()).unwrap();
             let addr = address!("0x1111111111111111111111111111111111111111");
             store
-                .add_chain_deployment("my-key", "open", addr, sample_pubkey(), sample_deployment(84532))
+                .add_chain_deployment(
+                    "my-key",
+                    "open",
+                    addr,
+                    sample_pubkey(),
+                    sample_deployment(84532),
+                )
                 .unwrap();
             store.save().unwrap();
         }

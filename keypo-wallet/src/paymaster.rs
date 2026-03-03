@@ -40,14 +40,10 @@ impl PaymasterClient {
             format!("0x{:x}", chain_id),
             self.context,
         ]);
-        let result = crate::rpc::json_rpc_post(
-            &self.client,
-            &self.url,
-            "pm_getPaymasterStubData",
-            params,
-        )
-        .await
-        .map_err(|e| Error::Paymaster(e.to_string()))?;
+        let result =
+            crate::rpc::json_rpc_post(&self.client, &self.url, "pm_getPaymasterStubData", params)
+                .await
+                .map_err(|e| Error::Paymaster(e.to_string()))?;
         serde_json::from_value(result).map_err(|e| Error::Paymaster(e.to_string()))
     }
 
@@ -64,14 +60,10 @@ impl PaymasterClient {
             format!("0x{:x}", chain_id),
             self.context,
         ]);
-        let result = crate::rpc::json_rpc_post(
-            &self.client,
-            &self.url,
-            "pm_getPaymasterData",
-            params,
-        )
-        .await
-        .map_err(|e| Error::Paymaster(e.to_string()))?;
+        let result =
+            crate::rpc::json_rpc_post(&self.client, &self.url, "pm_getPaymasterData", params)
+                .await
+                .map_err(|e| Error::Paymaster(e.to_string()))?;
         serde_json::from_value(result).map_err(|e| Error::Paymaster(e.to_string()))
     }
 

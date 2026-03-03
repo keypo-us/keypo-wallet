@@ -37,13 +37,8 @@ pub(crate) async fn json_rpc_post(
             .get("message")
             .and_then(|m| m.as_str())
             .unwrap_or("unknown error");
-        let data = err
-            .get("data")
-            .map(|d| format!(" {d}"))
-            .unwrap_or_default();
-        return Err(Error::Other(format!(
-            "RPC error {code}: {message}{data}"
-        )));
+        let data = err.get("data").map(|d| format!(" {d}")).unwrap_or_default();
+        return Err(Error::Other(format!("RPC error {code}: {message}{data}")));
     }
 
     // Return `result` field (including JSON null) — caller handles null.

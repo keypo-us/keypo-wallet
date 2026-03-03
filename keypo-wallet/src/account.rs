@@ -187,13 +187,9 @@ async fn fund_ephemeral_eoa(
         .map_err(|e| Error::Other(format!("invalid funder private key: {e}")))?;
     let wallet = EthereumWallet::from(funder);
     let url = parse_rpc_url(rpc_url)?;
-    let provider = ProviderBuilder::new()
-        .wallet(wallet)
-        .connect_http(url);
+    let provider = ProviderBuilder::new().wallet(wallet).connect_http(url);
 
-    let tx = TransactionRequest::default()
-        .with_to(to)
-        .with_value(amount);
+    let tx = TransactionRequest::default().with_to(to).with_value(amount);
     let pending = provider.send_transaction(tx).await.map_err(provider_err)?;
     let tx_hash = *pending.tx_hash();
     tracing::info!("Funding tx: {tx_hash}");
@@ -242,7 +238,11 @@ pub async fn setup(
 ) -> Result<SetupResult> {
     // 1. Get or create P-256 key
     let public_key = get_or_create_key(signer, &config.key_label, &config.key_policy)?;
-    tracing::info!("P-256 public key: qx={}, qy={}", public_key.qx, public_key.qy);
+    tracing::info!(
+        "P-256 public key: qx={}, qy={}",
+        public_key.qx,
+        public_key.qy
+    );
 
     // 2. Build read-only provider
     let rpc_url = parse_rpc_url(&config.rpc_url)?;
@@ -330,13 +330,8 @@ pub async fn setup(
     }
 
     // 13. Send setup transaction
-    let tx_hash = send_setup_transaction(
-        &signing_provider,
-        signed_auth,
-        init_calldata,
-        eoa_addr,
-    )
-    .await?;
+    let tx_hash =
+        send_setup_transaction(&signing_provider, signed_auth, init_calldata, eoa_addr).await?;
 
     // 14. Verify delegation on-chain (retry for stale RPC load balancer responses)
     let mut delegation_verified = false;
@@ -351,9 +346,7 @@ pub async fn setup(
                 break;
             }
             Err(e) if attempt < 5 => {
-                tracing::warn!(
-                    "Delegation check attempt {attempt}/5 failed ({e}), retrying..."
-                );
+                tracing::warn!("Delegation check attempt {attempt}/5 failed ({e}), retrying...");
                 tokio::time::sleep(Duration::from_secs(2)).await;
             }
             Err(e) => return Err(e),

@@ -31,19 +31,28 @@ pub struct ExecuteResult {
 // ---------------------------------------------------------------------------
 
 pub fn parse_hex_u128(s: &str) -> Result<u128> {
-    let stripped = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    let stripped = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
     u128::from_str_radix(stripped, 16)
         .map_err(|e| Error::Other(format!("invalid hex u128 '{s}': {e}")))
 }
 
 pub fn parse_hex_u256(s: &str) -> Result<U256> {
-    let stripped = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    let stripped = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
     U256::from_str_radix(stripped, 16)
         .map_err(|e| Error::Other(format!("invalid hex U256 '{s}': {e}")))
 }
 
 pub fn parse_hex_bytes(s: &str) -> Result<Vec<u8>> {
-    let stripped = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")).unwrap_or(s);
+    let stripped = s
+        .strip_prefix("0x")
+        .or_else(|| s.strip_prefix("0X"))
+        .unwrap_or(s);
     hex::decode(stripped).map_err(|e| Error::Other(format!("invalid hex bytes '{s}': {e}")))
 }
 
@@ -93,9 +102,7 @@ pub fn build_paymaster_and_data(user_op: &UserOp) -> Result<Vec<u8>> {
             .as_deref()
             .unwrap_or("0x0"),
     )?;
-    let pm_data = parse_hex_bytes(
-        user_op.paymaster_data.as_deref().unwrap_or("0x"),
-    )?;
+    let pm_data = parse_hex_bytes(user_op.paymaster_data.as_deref().unwrap_or("0x"))?;
 
     let mut result = Vec::with_capacity(20 + 16 + 16 + pm_data.len());
     result.extend_from_slice(&pm_bytes);
@@ -207,11 +214,7 @@ sol! {
 }
 
 /// Computes the ERC-4337 v0.7 UserOp hash (signature excluded from hash).
-pub fn compute_user_op_hash(
-    user_op: &UserOp,
-    entry_point: Address,
-    chain_id: u64,
-) -> Result<B256> {
+pub fn compute_user_op_hash(user_op: &UserOp, entry_point: Address, chain_id: u64) -> Result<B256> {
     // 1. Parse typed fields from hex strings
     let sender: Address = user_op
         .sender
@@ -281,7 +284,9 @@ pub async fn query_nonce(
         .call(
             alloy::rpc::types::TransactionRequest::default()
                 .to(entry_point)
-                .input(alloy::rpc::types::TransactionInput::new(Bytes::from(encoded))),
+                .input(alloy::rpc::types::TransactionInput::new(Bytes::from(
+                    encoded,
+                ))),
         )
         .await
         .map_err(|e| Error::Provider(format!("getNonce call failed: {e}")))?;
@@ -302,10 +307,10 @@ pub async fn get_gas_prices(provider: &impl Provider) -> Result<(u128, u128)> {
 
     let max_fee = gas_price * 3 / 2;
 
-    let max_priority_fee = match provider.get_max_priority_fee_per_gas().await {
-        Ok(fee) => fee,
-        Err(_) => 100_000_000u128, // 0.1 gwei fallback
-    };
+    let max_priority_fee = provider
+        .get_max_priority_fee_per_gas()
+        .await
+        .unwrap_or(100_000_000u128); // 0.1 gwei fallback
 
     Ok((max_fee, max_priority_fee))
 }
@@ -343,10 +348,9 @@ pub async fn execute_with_context(
     let sender = account.address;
 
     // 1. Resolve bundler URL
-    let bundler_url = chain
-        .bundler_url
-        .as_ref()
-        .ok_or_else(|| Error::Bundler("no bundler URL configured; use --bundler to specify".into()))?;
+    let bundler_url = chain.bundler_url.as_ref().ok_or_else(|| {
+        Error::Bundler("no bundler URL configured; use --bundler to specify".into())
+    })?;
 
     // 2. Build standard RPC provider (for nonce + gas price queries)
     let rpc_url = parse_rpc_url(&chain.rpc_url)?;
@@ -474,7 +478,9 @@ mod tests {
 
     #[test]
     fn parse_hex_u256_large() {
-        let val = parse_hex_u256("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff").unwrap();
+        let val =
+            parse_hex_u256("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+                .unwrap();
         assert_eq!(val, U256::MAX);
     }
 
@@ -610,7 +616,10 @@ mod tests {
         let init_code = build_init_code(&op).unwrap();
         // 20 bytes address + 4 bytes data
         assert_eq!(init_code.len(), 24);
-        assert_eq!(&init_code[..20], &hex::decode("3333333333333333333333333333333333333333").unwrap()[..]);
+        assert_eq!(
+            &init_code[..20],
+            &hex::decode("3333333333333333333333333333333333333333").unwrap()[..]
+        );
         assert_eq!(&init_code[20..], &[0xde, 0xad, 0xbe, 0xef]);
     }
 
@@ -644,7 +653,10 @@ mod tests {
         assert_eq!(pm_data.len(), 54);
 
         // Verify address
-        assert_eq!(&pm_data[..20], &hex::decode("4444444444444444444444444444444444444444").unwrap()[..]);
+        assert_eq!(
+            &pm_data[..20],
+            &hex::decode("4444444444444444444444444444444444444444").unwrap()[..]
+        );
 
         // Verify gas limits are u128::to_be_bytes (16 bytes each), NOT raw hex-decode
         let verif_gas_bytes = &pm_data[20..36];

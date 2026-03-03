@@ -302,12 +302,19 @@ pub fn sort_balances(balances: &mut [TokenBalance], sort_by: Option<&str>) {
 
 pub fn format_info(account: &AccountRecord, chain_filter: Option<u64>) -> String {
     let mut out = String::new();
-    out.push_str(&format!("{} ({}):\n", account.key_label, account.key_policy));
+    out.push_str(&format!(
+        "{} ({}):\n",
+        account.key_label, account.key_policy
+    ));
     out.push_str(&format!("  Address: {}\n", short_address(account.address)));
     out.push_str("  Chains:\n");
 
     let chains: Vec<&ChainDeployment> = match chain_filter {
-        Some(cid) => account.chains.iter().filter(|c| c.chain_id == cid).collect(),
+        Some(cid) => account
+            .chains
+            .iter()
+            .filter(|c| c.chain_id == cid)
+            .collect(),
         None => account.chains.iter().collect(),
     };
 
@@ -346,7 +353,11 @@ pub fn format_balance_table(account: &AccountRecord, balances: &[TokenBalance]) 
         out.push_str(&format!("  {}:\n", display_chain(*chain_id)));
 
         // Compute max label length for alignment
-        let max_label_len = tbs.iter().map(|tb| display_label(tb).len()).max().unwrap_or(0);
+        let max_label_len = tbs
+            .iter()
+            .map(|tb| display_label(tb).len())
+            .max()
+            .unwrap_or(0);
 
         for tb in tbs {
             let label = display_label(tb);
@@ -388,9 +399,7 @@ pub fn format_balance_json(account: &AccountRecord, balances: &[TokenBalance]) -
         .iter()
         .map(|tb| BalanceEntry {
             chain_id: tb.chain_id,
-            chain: chain_name(tb.chain_id)
-                .unwrap_or("Unknown")
-                .to_string(),
+            chain: chain_name(tb.chain_id).unwrap_or("Unknown").to_string(),
             token: display_label(tb),
             balance: format_balance(tb.balance, tb.decimals),
             raw: tb.balance.to_string(),
@@ -436,10 +445,7 @@ sol! {
     function symbol() external view returns (string);
 }
 
-pub async fn query_native_balance(
-    provider: &impl Provider,
-    address: Address,
-) -> Result<U256> {
+pub async fn query_native_balance(provider: &impl Provider, address: Address) -> Result<U256> {
     provider
         .get_balance(address)
         .await
@@ -467,14 +473,10 @@ pub async fn query_erc20_balance(
         .await
         .map_err(|e| Error::Provider(format!("balanceOf call failed: {e}")))?;
 
-    U256::abi_decode(&result)
-        .map_err(|e| Error::Provider(format!("balanceOf decode failed: {e}")))
+    U256::abi_decode(&result).map_err(|e| Error::Provider(format!("balanceOf decode failed: {e}")))
 }
 
-pub async fn query_erc20_decimals(
-    provider: &impl Provider,
-    token_addr: Address,
-) -> u8 {
+pub async fn query_erc20_decimals(provider: &impl Provider, token_addr: Address) -> u8 {
     let call_data = decimalsCall {};
     let encoded = SolCall::abi_encode(&call_data);
 
@@ -489,17 +491,12 @@ pub async fn query_erc20_decimals(
         .await;
 
     match result {
-        Ok(bytes) => {
-            decimalsCall::abi_decode_returns(&bytes).unwrap_or(18)
-        }
+        Ok(bytes) => decimalsCall::abi_decode_returns(&bytes).unwrap_or(18),
         Err(_) => 18,
     }
 }
 
-pub async fn query_erc20_symbol(
-    provider: &impl Provider,
-    token_addr: Address,
-) -> Option<String> {
+pub async fn query_erc20_symbol(provider: &impl Provider, token_addr: Address) -> Option<String> {
     let call_data = symbolCall {};
     let encoded = SolCall::abi_encode(&call_data);
 

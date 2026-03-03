@@ -30,11 +30,7 @@ impl BundlerClient {
     }
 
     /// Shared JSON-RPC call via `rpc::json_rpc_post`, mapping errors to `Error::Bundler`.
-    async fn rpc_call(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> Result<serde_json::Value> {
+    async fn rpc_call(&self, method: &str, params: serde_json::Value) -> Result<serde_json::Value> {
         crate::rpc::json_rpc_post(&self.client, &self.url, method, params)
             .await
             .map_err(|e| Error::Bundler(e.to_string()))
@@ -57,10 +53,7 @@ impl BundlerClient {
     }
 
     /// Estimates gas for a UserOp.
-    pub async fn estimate_user_operation_gas(
-        &self,
-        user_op: &UserOp,
-    ) -> Result<GasEstimate> {
+    pub async fn estimate_user_operation_gas(&self, user_op: &UserOp) -> Result<GasEstimate> {
         let result = self
             .rpc_call(
                 "eth_estimateUserOperationGas",
@@ -88,10 +81,7 @@ impl BundlerClient {
     }
 
     /// Polls for a UserOp receipt. Returns `None` if not yet mined.
-    pub async fn get_user_operation_receipt(
-        &self,
-        hash: B256,
-    ) -> Result<Option<UserOpReceipt>> {
+    pub async fn get_user_operation_receipt(&self, hash: B256) -> Result<Option<UserOpReceipt>> {
         let result = self
             .rpc_call(
                 "eth_getUserOperationReceipt",
@@ -108,11 +98,7 @@ impl BundlerClient {
 
     /// Waits for a UserOp receipt with exponential backoff.
     /// Initial delay 2s, multiplier 1.5, max delay 10s.
-    pub async fn wait_for_receipt(
-        &self,
-        hash: B256,
-        max_wait: Duration,
-    ) -> Result<UserOpReceipt> {
+    pub async fn wait_for_receipt(&self, hash: B256, max_wait: Duration) -> Result<UserOpReceipt> {
         let start = std::time::Instant::now();
         let mut delay = 2.0_f64; // seconds
 
@@ -194,10 +180,7 @@ mod tests {
             estimate.paymaster_verification_gas_limit,
             Some("0x5208".into())
         );
-        assert_eq!(
-            estimate.paymaster_post_op_gas_limit,
-            Some("0x0".into())
-        );
+        assert_eq!(estimate.paymaster_post_op_gas_limit, Some("0x0".into()));
     }
 
     #[test]
@@ -275,10 +258,7 @@ mod tests {
             .get("message")
             .and_then(|m| m.as_str())
             .unwrap_or("unknown");
-        let data = err
-            .get("data")
-            .map(|d| format!(" {d}"))
-            .unwrap_or_default();
+        let data = err.get("data").map(|d| format!(" {d}")).unwrap_or_default();
         let formatted = format!("RPC error {code}: {message}{data}");
         assert!(formatted.contains("-32602"));
         assert!(formatted.contains("invalid params"));

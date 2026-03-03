@@ -42,12 +42,10 @@ pub fn parse_public_key(hex_str: &str) -> Result<P256PublicKey> {
         )));
     }
 
-    let qx_bytes = hex::decode(&coord_hex[..64]).map_err(|e| {
-        Error::SignerOutput(format!("invalid hex in qx: {}", e))
-    })?;
-    let qy_bytes = hex::decode(&coord_hex[64..]).map_err(|e| {
-        Error::SignerOutput(format!("invalid hex in qy: {}", e))
-    })?;
+    let qx_bytes = hex::decode(&coord_hex[..64])
+        .map_err(|e| Error::SignerOutput(format!("invalid hex in qx: {}", e)))?;
+    let qy_bytes = hex::decode(&coord_hex[64..])
+        .map_err(|e| Error::SignerOutput(format!("invalid hex in qy: {}", e)))?;
 
     Ok(P256PublicKey {
         qx: B256::from_slice(&qx_bytes),
@@ -114,8 +112,9 @@ impl P256Signer for KeypoSigner {
     }
 
     fn create_key(&self, label: &str, policy: &str) -> Result<P256PublicKey> {
-        let output =
-            self.run_command(&["create", "--label", label, "--policy", policy, "--format", "json"])?;
+        let output = self.run_command(&[
+            "create", "--label", label, "--policy", policy, "--format", "json",
+        ])?;
         let pk_hex = output["publicKey"]
             .as_str()
             .ok_or_else(|| Error::SignerOutput("missing publicKey field".into()))?;
@@ -197,8 +196,7 @@ pub mod mock {
             policy: &str,
             seed: &[u8; 32],
         ) -> P256PublicKey {
-            let sk = SigningKey::from_bytes(seed.into())
-                .expect("valid seed for P-256 signing key");
+            let sk = SigningKey::from_bytes(seed.into()).expect("valid seed for P-256 signing key");
             let pk = extract_public_key(&sk);
             self.keys
                 .lock()
@@ -247,7 +245,8 @@ pub mod mock {
                 .get(label)
                 .ok_or_else(|| Error::SignerNotFound(label.to_string()))?;
 
-            let sig: Signature = sk.sign_prehash(digest)
+            let sig: Signature = sk
+                .sign_prehash(digest)
                 .map_err(|e| Error::Other(format!("P-256 signing failed: {e}")))?;
             // Normalize to low-S
             let sig = sig.normalize_s().unwrap_or(sig);
@@ -320,10 +319,8 @@ mod tests {
 
         let r_hex = json["r"].as_str().unwrap();
         let s_hex = json["s"].as_str().unwrap();
-        let r_bytes =
-            hex::decode(r_hex.strip_prefix("0x").unwrap()).unwrap();
-        let s_bytes =
-            hex::decode(s_hex.strip_prefix("0x").unwrap()).unwrap();
+        let r_bytes = hex::decode(r_hex.strip_prefix("0x").unwrap()).unwrap();
+        let s_bytes = hex::decode(s_hex.strip_prefix("0x").unwrap()).unwrap();
 
         let sig = P256Signature {
             r: B256::from_slice(&r_bytes),
