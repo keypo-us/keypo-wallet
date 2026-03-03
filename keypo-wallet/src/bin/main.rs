@@ -1,13 +1,14 @@
 use std::path::Path;
 use std::time::Duration;
 
-use alloy::primitives::Address;
+use alloy::primitives::{Address, Bytes, U256};
 use clap::{Parser, Subcommand};
 use keypo_wallet::account::{self, FundingStrategy, SetupConfig, SETUP_FUNDING_AMOUNT};
 use keypo_wallet::AccountImplementation;
 use keypo_wallet::impls::KeypoAccountImpl;
 use keypo_wallet::signer::KeypoSigner;
 use keypo_wallet::state::StateStore;
+use keypo_wallet::types::Call;
 
 #[derive(Parser)]
 #[command(name = "keypo-wallet", about = "Keypo smart wallet CLI")]
@@ -74,6 +75,22 @@ enum Commands {
         /// Chain ID
         #[arg(long)]
         chain_id: Option<u64>,
+
+        /// Bundler RPC URL (overrides stored deployment)
+        #[arg(long)]
+        bundler: Option<String>,
+
+        /// Paymaster URL (overrides stored deployment)
+        #[arg(long)]
+        paymaster: Option<String>,
+
+        /// Paymaster sponsorship policy ID (e.g. sp_clever_unus)
+        #[arg(long)]
+        paymaster_policy: Option<String>,
+
+        /// Standard RPC URL (overrides stored deployment, used for nonce/gas queries)
+        #[arg(long)]
+        rpc: Option<String>,
     },
 
     /// Send a batch of calls
@@ -89,6 +106,22 @@ enum Commands {
         /// Chain ID
         #[arg(long)]
         chain_id: Option<u64>,
+
+        /// Bundler RPC URL (overrides stored deployment)
+        #[arg(long)]
+        bundler: Option<String>,
+
+        /// Paymaster URL (overrides stored deployment)
+        #[arg(long)]
+        paymaster: Option<String>,
+
+        /// Paymaster sponsorship policy ID (e.g. sp_clever_unus)
+        #[arg(long)]
+        paymaster_policy: Option<String>,
+
+        /// Standard RPC URL (overrides stored deployment, used for nonce/gas queries)
+        #[arg(long)]
+        rpc: Option<String>,
     },
 
     /// Show account info
@@ -151,13 +184,29 @@ async fn main() {
             )
             .await
         }
-        Commands::Send { .. } => {
-            println!("send: not implemented");
-            Ok(())
+        Commands::Send {
+            key,
+            to,
+            value,
+            data,
+            chain_id,
+            bundler,
+            paymaster,
+            paymaster_policy,
+            rpc,
+        } => {
+            run_send(key, to, value, data, chain_id, bundler, paymaster, paymaster_policy, rpc).await
         }
-        Commands::Batch { .. } => {
-            println!("batch: not implemented");
-            Ok(())
+        Commands::Batch {
+            key,
+            calls,
+            chain_id,
+            bundler,
+            paymaster,
+            paymaster_policy,
+            rpc,
+        } => {
+            run_batch(key, calls, chain_id, bundler, paymaster, paymaster_policy, rpc).await
         }
         Commands::Info { .. } => {
             println!("info: not implemented");
@@ -253,6 +302,125 @@ async fn run_setup(
     Ok(())
 }
 
+/// Resolves account and chain deployment, applying CLI overrides for bundler/paymaster/rpc.
+fn resolve_account_and_chain(
+    state: &StateStore,
+    key: &str,
+    chain_id: Option<u64>,
+    bundler_override: Option<String>,
+    paymaster_override: Option<String>,
+    rpc_override: Option<String>,
+) -> std::result::Result<
+    (keypo_wallet::types::AccountRecord, keypo_wallet::types::ChainDeployment),
+    Box<dyn std::error::Error>,
+> {
+    let (account, chain) = if let Some(cid) = chain_id {
+        let (acct, chain) = state
+            .find_account(key, cid)
+            .ok_or_else(|| format!("no account found for key '{key}' on chain {cid}"))?;
+        (acct.clone(), chain.clone())
+    } else {
+        let acct = state
+            .find_accounts_for_key(key)
+            .ok_or_else(|| format!("no account found for key '{key}'"))?;
+        let chain = acct
+            .chains
+            .first()
+            .ok_or_else(|| format!("key '{key}' has no chain deployments"))?;
+        (acct.clone(), chain.clone())
+    };
+
+    // Apply CLI overrides
+    let mut chain = chain;
+    if let Some(b) = bundler_override {
+        chain.bundler_url = Some(b);
+    }
+    if let Some(p) = paymaster_override {
+        chain.paymaster_url = Some(p);
+    }
+    if let Some(r) = rpc_override {
+        chain.rpc_url = r;
+    }
+
+    Ok((account, chain))
+}
+
+async fn run_send(
+    key: String,
+    to: String,
+    value: String,
+    data: Option<String>,
+    chain_id: Option<u64>,
+    bundler: Option<String>,
+    paymaster: Option<String>,
+    paymaster_policy: Option<String>,
+    rpc: Option<String>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let state = StateStore::open()?;
+    let (account, chain) = resolve_account_and_chain(&state, &key, chain_id, bundler, paymaster, rpc)?;
+
+    let signer = KeypoSigner::new();
+    let imp = load_deployments_impl();
+
+    // Parse call fields
+    let to_addr: Address = to.parse().map_err(|e| format!("invalid --to address: {e}"))?;
+    let call_value: U256 = value.parse().map_err(|e| format!("invalid --value: {e}"))?;
+    let call_data = if let Some(ref d) = data {
+        let stripped = d.strip_prefix("0x").or_else(|| d.strip_prefix("0X")).unwrap_or(d);
+        Bytes::from(hex::decode(stripped).map_err(|e| format!("invalid --data hex: {e}"))?)
+    } else {
+        Bytes::new()
+    };
+
+    let call = Call {
+        to: to_addr,
+        value: call_value,
+        data: call_data,
+    };
+
+    let pm_context = paymaster_policy.map(|id| serde_json::json!({"sponsorshipPolicyId": id}));
+    let result = keypo_wallet::transaction::execute_with_context(&account, &chain, &[call], &imp, &signer, pm_context).await?;
+
+    println!("Transaction sent!");
+    println!("  UserOp hash: {}", result.user_op_hash);
+    println!("  Tx hash:     {}", result.tx_hash);
+    println!("  Success:     {}", result.success);
+
+    Ok(())
+}
+
+async fn run_batch(
+    key: String,
+    calls_path: String,
+    chain_id: Option<u64>,
+    bundler: Option<String>,
+    paymaster: Option<String>,
+    paymaster_policy: Option<String>,
+    rpc: Option<String>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let state = StateStore::open()?;
+    let (account, chain) = resolve_account_and_chain(&state, &key, chain_id, bundler, paymaster, rpc)?;
+
+    let signer = KeypoSigner::new();
+    let imp = load_deployments_impl();
+
+    // Read and parse calls JSON file
+    let calls_json = std::fs::read_to_string(&calls_path)
+        .map_err(|e| format!("failed to read calls file '{calls_path}': {e}"))?;
+    let calls: Vec<Call> = serde_json::from_str(&calls_json)
+        .map_err(|e| format!("failed to parse calls JSON: {e}"))?;
+
+    let pm_context = paymaster_policy.map(|id| serde_json::json!({"sponsorshipPolicyId": id}));
+    let result = keypo_wallet::transaction::execute_with_context(&account, &chain, &calls, &imp, &signer, pm_context).await?;
+
+    println!("Batch transaction sent!");
+    println!("  UserOp hash: {}", result.user_op_hash);
+    println!("  Tx hash:     {}", result.tx_hash);
+    println!("  Success:     {}", result.success);
+
+    Ok(())
+}
+
 fn load_deployments_impl() -> KeypoAccountImpl {
     // Try CARGO_MANIFEST_DIR (works for cargo run), fall back to relative path
     let deployments_dir = option_env!("CARGO_MANIFEST_DIR")
@@ -341,16 +509,31 @@ mod tests {
             "0x1234",
             "--chain-id",
             "1",
+            "--bundler",
+            "https://bundler.example.com",
+            "--paymaster",
+            "https://paymaster.example.com",
+            "--rpc",
+            "https://rpc.example.com",
         ])
         .unwrap();
 
         match cli.command {
             Commands::Send {
-                key, to, value, ..
+                key,
+                to,
+                value,
+                bundler,
+                paymaster,
+                rpc,
+                ..
             } => {
                 assert_eq!(key, "my-key");
                 assert_eq!(to, "0xdead");
                 assert_eq!(value, "1000000000000000000");
+                assert_eq!(bundler, Some("https://bundler.example.com".into()));
+                assert_eq!(paymaster, Some("https://paymaster.example.com".into()));
+                assert_eq!(rpc, Some("https://rpc.example.com".into()));
             }
             _ => panic!("expected Send"),
         }
@@ -367,6 +550,12 @@ mod tests {
             "calls.json",
             "--chain-id",
             "84532",
+            "--bundler",
+            "https://bundler.example.com",
+            "--paymaster",
+            "https://paymaster.example.com",
+            "--rpc",
+            "https://rpc.example.com",
         ])
         .unwrap();
 
@@ -375,10 +564,17 @@ mod tests {
                 key,
                 calls,
                 chain_id,
+                bundler,
+                paymaster,
+                rpc,
+                ..
             } => {
                 assert_eq!(key, "my-key");
                 assert_eq!(calls, "calls.json");
                 assert_eq!(chain_id, Some(84532));
+                assert_eq!(bundler, Some("https://bundler.example.com".into()));
+                assert_eq!(paymaster, Some("https://paymaster.example.com".into()));
+                assert_eq!(rpc, Some("https://rpc.example.com".into()));
             }
             _ => panic!("expected Batch"),
         }
@@ -434,5 +630,18 @@ mod tests {
     fn missing_required_key_fails() {
         let result = Cli::try_parse_from(["keypo-wallet", "setup"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn batch_call_deserialization() {
+        let json = r#"[
+            {"to": "0x1111111111111111111111111111111111111111", "value": "0x0", "data": "0x"},
+            {"to": "0x2222222222222222222222222222222222222222", "value": "0x38d7ea4c68000", "data": "0x1234"}
+        ]"#;
+        let calls: Vec<Call> = serde_json::from_str(json).unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].value, U256::ZERO);
+        assert_eq!(calls[1].value, U256::from(0x38d7ea4c68000u64));
+        assert_eq!(calls[1].data, Bytes::from(vec![0x12, 0x34]));
     }
 }

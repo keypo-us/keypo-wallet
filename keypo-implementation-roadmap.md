@@ -592,147 +592,187 @@ Used `TEST_FUNDER_PRIVATE_KEY` for auto-funding. All checks confirmed:
 
 ---
 
-## Phase 4 — Bundler Integration (keypo-wallet)
+## Phase 4 — Bundler Integration + CLI Send/Batch (keypo-wallet) ✅ COMPLETE
 
-**Goal:** Implement the `BundlerClient` (ERC-7769) and `UserOperation` construction. Be able to estimate gas and submit operations, but not yet sign them with keypo-signer (use the mock signer for testing).
+**Goal:** Implement the `BundlerClient` (ERC-7769), `UserOperation` construction, ERC-7677 paymaster wiring, full `execute` orchestration, and CLI `send`/`batch` commands. Verified end-to-end with MockSigner against live Base Sepolia + Pimlico bundler.
 
-**Duration:** 3–5 days
+**Status:** Complete. 90 tests pass (79 lib + 8 bin + 3 scaffolding + 4 send integration). Self-funded and paymaster-sponsored UserOps verified on Base Sepolia.
 
 **Depends on:** Phase 3 (a deployed smart account exists on testnet to test against, including a mock-signer test account)
 
-### 4.1 BundlerClient (ERC-7769)
+### 4.1 BundlerClient (ERC-7769) ✅
 
-Implement `bundler.rs` targeting the **ERC-7769 standard JSON-RPC API**:
+`src/bundler.rs` — raw JSON-RPC client, bundler-agnostic:
 
-- `eth_supportedEntryPoints` — first call, confirms connectivity
-- `eth_estimateUserOperationGas` — requires a valid UserOp skeleton
-- `eth_sendUserOperation` — submit signed UserOp
-- `eth_getUserOperationReceipt` — poll for inclusion
-- `eth_getUserOperationByHash` — lookup by hash
-- `wait_for_receipt` — exponential backoff wrapper
+- `BundlerClient` owns `reqwest::Client` (30s timeout) for connection pooling
+- `supported_entry_points()` — connectivity check
+- `estimate_user_operation_gas()` — returns `GasEstimate`
+- `send_user_operation()` — returns UserOp hash (`B256`)
+- `get_user_operation_receipt()` — null result → `Ok(None)`
+- `wait_for_receipt()` — exponential backoff (2s → 3s → 4.5s → 6.75s → 10s cap)
 
-**Raw JSON-RPC only.** No Pimlico SDK, no bundler-specific abstractions. The BundlerClient speaks the ERC-7769 standard, making it bundler-agnostic.
+**Type alias:** `pub type UserOp = PaymasterUserOp;` — reuses the unpacked v0.7 format from `paymaster.rs`.
 
-**Optional Pimlico extensions** (not in core path):
-- `pimlico_getUserOperationGasPrice` — convenience for gas pricing
+**Response types:** `GasEstimate`, `UserOpReceipt`, `TxReceipt` — all `#[serde(rename_all = "camelCase")]`, NO `deny_unknown_fields` (bundler returns extra fields).
 
-Test against Pimlico on Base Sepolia. Start with `eth_supportedEntryPoints` to confirm the bundler is reachable and returns the v0.7 EntryPoint.
+6 unit tests (JSON-RPC envelope, GasEstimate deser with/without paymaster fields, receipt deser, null-receipt-as-None, error extraction).
 
-### 4.2 UserOperation Construction
+### 4.2 Shared JSON-RPC Helper ✅
 
-Implement `transaction.rs`:
+`src/rpc.rs` — `pub(crate) async fn json_rpc_post()` used by both `BundlerClient` and `PaymasterClient`. Returns `Error::Other`; callers wrap via `.map_err()` into domain-specific errors.
 
-- `PackedUserOperation` struct — CONFIRMED: matches v0.7. BundlerClient needs packed→unpacked serialization for RPC.
-- `compute_user_op_hash` — the digest that gets signed
-- `pack_without_signature` — serialization for hashing
-- Gas field packing (`account_gas_limits`, `gas_fees` are packed `bytes32` values in v0.7)
-- ERC-4337 nonce querying (call EntryPoint's `getNonce(address, uint192 key)` on-chain)
+### 4.3 UserOperation Construction ✅
 
-### 4.3 Gas Estimation Flow
+`src/transaction.rs` — pure helpers + async orchestration:
 
-Build the gas estimation round-trip:
+**Pure helpers:**
+- `parse_hex_u128`, `parse_hex_u256`, `parse_hex_bytes` — hex parsing with/without `0x` prefix
+- `pack_u128_pair(high, low) -> B256` — packs two u128 into bytes32 (`high.to_be_bytes()` in [0..16], `low.to_be_bytes()` in [16..32])
+- `build_init_code(user_op)` — factory address + factoryData concatenation (empty if no factory)
+- `build_paymaster_and_data(user_op)` — address(20) + verifGas(16, `u128::to_be_bytes()`) + postOpGas(16) + pmData
+- `build_user_op_skeleton(sender, nonce, call_data, dummy_sig)` — all gas fields `"0x0"`
+- `apply_gas_estimate`, `apply_gas_prices`, `apply_paymaster_stub`, `apply_paymaster_data` — mutate UserOp in-place
 
-1. Construct UserOp with dummy signature (from `AccountImplementation::dummy_signature()`)
-2. Call `eth_estimateUserOperationGas` on the bundler (ERC-7769)
-3. Parse the gas estimate
-4. Apply gas values to the UserOp
-5. Set `maxFeePerGas` and `maxPriorityFeePerGas` (from bundler suggestion or provider's `eth_gasPrice` + margin)
+**Gas field packing order:**
+- `accountGasLimits = pack(verificationGasLimit, callGasLimit)`
+- `gasFees = pack(maxPriorityFeePerGas, maxFeePerGas)`
 
-### 4.4 ERC-7677 Paymaster Integration
+**Hash computation — `compute_user_op_hash(user_op, entry_point, chain_id)`:**
+1. Parse all typed fields from UserOp hex strings
+2. Build `initCode` and `paymasterAndData` byte arrays
+3. Pack gas fields into `accountGasLimits` and `gasFees`
+4. `inner = keccak256(abi_encode_params(sender, nonce, hash(initCode), hash(callData), accountGasLimits, pvg, gasFees, hash(pmAndData)))`
+5. `userOpHash = keccak256(abi_encode_params(inner, entryPoint, chainId))`
 
-Wire the ERC-7677 paymaster client (built in Phase 2.7) into the UserOp construction flow:
+Uses alloy `sol!` structs (`UserOpPack`, `UserOpHashEnvelope`) with **`abi_encode_params()`** (confirmed critical — same as Phase 1/2 finding).
 
-1. Before gas estimation: call `pm_getPaymasterStubData` to get stub paymaster data
-2. Include stub data in the UserOp for gas estimation
-3. After gas estimation: call `pm_getPaymasterData` with the gas-estimated UserOp
-4. Replace stub data with real paymaster data before signing
+Hash vectors validated against on-chain `EntryPoint.getUserOpHash()` via `keypo-account/script/GenHashVector.s.sol` (3 vectors: minimal, with paymaster, with factory).
 
-### 4.5 Automated Tests
+**Async helpers:**
+- `query_nonce(provider, sender, entry_point)` — calls `getNonce(address, uint192(0))` via raw ABI encoding. alloy maps `uint192` to `Uint<192, 3>`.
+- `get_gas_prices(provider)` — `eth_gasPrice * 3/2` for maxFee, `eth_maxPriorityFeePerGas` with 0.1 gwei fallback. **Always via standard RPC, never bundler URL.**
 
-- Unit tests for JSON-RPC serialization/deserialization (request and response formats)
-- Unit tests for `compute_user_op_hash` against known test vectors
-- Unit tests for packed→unpacked UserOp serialization
-- Unit tests for ERC-7677 stub/real paymaster data flow
-- Integration test: MockSigner-signed UserOp submission against testnet bundler
+19 unit tests including 3 hash vectors, hex parsing, gas field application, init code / paymaster data building.
 
-```bash
-cargo test
+### 4.4 Execute Orchestration ✅
+
+`transaction::execute()` and `transaction::execute_with_context()` — 17-step flow:
+
+1. Resolve bundler URL (required) and build standard RPC provider
+2. Encode calldata via `implementation.encode_execute(calls)`
+3. Query nonce via `EntryPoint.getNonce(sender, 0)`
+4. Build UserOp skeleton with dummy signature
+5. If paymaster: get stub data (`pm_getPaymasterStubData`), apply to UserOp
+6. Get gas prices (standard RPC), apply **before estimation** (L2 preVerificationGas depends on fee context)
+7. Estimate gas (`eth_estimateUserOperationGas`), apply with 10% preVerificationGas buffer (`pvg * 11 / 10`)
+8. If paymaster: get real data (`pm_getPaymasterData`), replace stub
+9. Compute UserOp hash
+10. Sign with P-256 signer, encode signature
+11. Submit to bundler, verify hash matches
+12. Wait for receipt (120s timeout)
+
+**`execute_with_context()`** takes optional `serde_json::Value` paymaster context (e.g. `{"sponsorshipPolicyId": "sp_..."}`) forwarded to ERC-7677 calls.
+
+### 4.5 ERC-7677 Paymaster Integration ✅
+
+Updated `paymaster.rs`:
+- Added `client: reqwest::Client` field to `PaymasterClient`
+- Added `with_context(url, context)` constructor
+- Added async `get_paymaster_stub_data()` and `get_paymaster_data()` HTTP methods via `rpc::json_rpc_post()`
+
+### 4.6 CLI Send/Batch Commands ✅
+
+Wired `send` and `batch` subcommands in `bin/main.rs`:
+
+- `resolve_account_and_chain()` helper — loads account from StateStore, applies CLI overrides
+- URL resolution order: `--bundler`/`--paymaster`/`--rpc` CLI arg > stored chain deployment value > error (bundler) or None (paymaster)
+- `--paymaster-policy <ID>` flag converts to `{"sponsorshipPolicyId": id}` context JSON
+- `batch` reads `--calls` JSON file as `Vec<Call>`
+- Both use `KeypoSigner::new()` (real signer) — CLI is fully wired for Secure Enclave signing
+
+### 4.7 Automated Tests ✅ — 90/90 Pass
+
+```
+79 lib tests + 8 bin tests + 3 scaffolding integration = 90 unit/bin tests
+4 send integration tests (ignored, require env vars + network)
+4 setup integration tests (ignored, from Phase 3)
 ```
 
-**Gate: All automated tests pass before mock-signed submission test.**
+#### Unit Tests (new in Phase 4) — 26 tests ✅
 
-### 4.6 Mock-Signed Submission Test (Automated, Not Human)
+- `bundler.rs`: 6 tests (JSON-RPC envelope, deser, error extraction)
+- `transaction.rs`: 19 tests (hex parsing, packing, skeleton, gas application, paymaster application, build_init_code, build_paymaster_and_data, 3 hash vectors)
+- `bin/main.rs`: 1 test (batch call deserialization)
 
-Using the **mock-signer test account created in Phase 3.5** (an account initialized with the MockSigner's P-256 public key instead of a Secure Enclave key), run the full submission flow against testnet:
+#### Integration Tests (`tests/integration_send.rs`, `#[ignore]`) — 4 tests ✅
 
-1. Build a simple ETH transfer UserOp for the mock-signer test account
-2. Estimate gas
-3. Compute `userOpHash`
-4. Sign with `MockSigner`
-5. Submit to bundler
-6. Wait for receipt
+| # | Test | Validates |
+|---|------|-----------|
+| 1 | `test_bundler_connectivity` | `supported_entry_points()` returns v0.7 EntryPoint |
+| 2 | `test_query_nonce_fresh_account` | Setup account → nonce query → 0 |
+| 3 | `test_send_eth_self_transfer` | Full e2e self-funded: setup → fund 0.005 ETH → 0-value self-transfer → verify `success == true` |
+| 4 | `test_send_with_paymaster` | Full e2e paymaster-sponsored: setup → 0-value self-transfer → paymaster covers gas → verify `success == true` |
 
-Because the mock signer's P-256 public key was registered during the test account's setup, the mock-signed UserOp **will pass on-chain validation**. This gives a true end-to-end automated test without needing Secure Enclave access in CI.
+Run integration tests with:
+```bash
+# Load .env, run serially (shared funder wallet)
+set -a && source .env && set +a && \
+cargo test --test integration_send -- --ignored --test-threads=1
+```
 
-**Milestone: UserOps are correctly constructed, gas-estimated, and submitted to a real bundler. Mock-signed operations pass on-chain validation end-to-end. ERC-7677 paymaster flow works. All automated tests pass.**
+### 4.8 Implementation Findings (Deviations from Spec/Plan)
+
+1. **No `PackedUserOperation` struct.** The unpacked format (`PaymasterUserOp`) is the canonical in-memory type. Packing only happens inside `compute_user_op_hash`. Type alias `UserOp = PaymasterUserOp` avoids duplication.
+
+2. **`MockSigner` must use `PrehashSigner::sign_prehash()`, NOT `Signer::sign()`.** The `p256::ecdsa::signature::Signer::sign()` method SHA-256 hashes the message before P-256 signing, but the on-chain KeypoAccount expects a raw prehash signature (the UserOp hash is already the digest). This caused `AA24 signature error` until fixed. The real `keypo-signer` CLI correctly signs raw digests via the Secure Enclave.
+
+3. **`apply_paymaster_data()` must preserve gas limits from estimator.** The `pm_getPaymasterData` response often omits `paymasterVerificationGasLimit` and `paymasterPostOpGasLimit`. If `apply_paymaster_data` unconditionally overwrites these with `None`, the UserOp has no paymaster gas limits and fails with `AA33 reverted` (paymaster out of gas). Fix: only overwrite when the response provides new values.
+
+4. **Pimlico testnet sponsors without `sponsorshipPolicyId`.** On testnet, the Pimlico verifying paymaster sponsors transactions by default — no sponsorship policy required. The `--paymaster-policy` CLI flag is available for production use where policies control sponsorship. Note: creating a sponsorship policy and passing it may cause `"sponsorshipPolicy not for this user"` errors if the policy isn't properly linked to the API key.
+
+5. **`alloy 1.7 provider.call()` takes owned `TransactionRequest`**, not a reference. Uses `.to(addr)` and `.input(TransactionInput::new(...))`.
+
+6. **Gas pricing via standard RPC only.** `eth_gasPrice` and `eth_maxPriorityFeePerGas` must be called on the standard RPC provider (`chain.rpc_url`), not the bundler URL. The Pimlico bundler URL only supports ERC-7769 methods.
+
+7. **`paymasterAndData` gas encoding:** Gas limits are parsed as `u128` via `parse_hex_u128()`, then encoded as `u128::to_be_bytes()` (fixed 16 bytes). NOT raw hex-decode, which would produce variable-length bytes.
+
+8. **`send`/`batch` CLI commands implemented in Phase 4** (originally planned for Phase 5). The CLI is fully wired with `KeypoSigner::new()` and ready for Secure Enclave signing.
+
+9. **Hash vector generation:** `keypo-account/script/GenHashVector.s.sol` calls on-chain `EntryPoint.getUserOpHash()` on a Base Sepolia fork to generate reference hashes. This ensures the Rust hash computation matches the canonical Solidity implementation exactly.
+
+**Milestone: UserOps are correctly constructed, gas-estimated, and submitted to a real bundler. Mock-signed operations pass on-chain P-256 validation end-to-end. ERC-7677 paymaster-sponsored transactions work. CLI `send`/`batch` commands wired with real signer. All 90 automated tests pass. 4 integration tests verified on live Base Sepolia.**
 
 ---
 
-## Phase 5 — Transaction Signing + CLI (keypo-wallet)
+## Phase 5 — Query Commands + Manual E2E Test (keypo-wallet)
 
-**Goal:** Wire keypo-signer signing into the transaction flow. Implement `send`, `batch`, and `balance` commands. Achieve the first real transaction: a P-256-signed, bundler-submitted, on-chain-verified operation from a Secure Enclave key.
+**Goal:** Implement `info` and `balance` read-only commands. Run the first real Secure Enclave-signed transaction on testnet (manual end-to-end test). The `send` and `batch` commands were already wired in Phase 4 with `KeypoSigner` — Phase 5 focuses on the remaining CLI commands and the first human-driven transaction.
 
 **Duration:** 2–3 days
 
-**Depends on:** Phase 4 (bundler integration working)
+**Depends on:** Phase 4 (bundler integration + CLI send/batch working)
 
-### 5.1 Live Signing Integration
+### 5.1 `info` Command
 
-Replace the mock signer in the transaction flow with the real `KeypoSigner`:
+Wire the CLI's `info` subcommand:
 
-1. Build UserOp → estimate gas → compute `userOpHash`
-2. Call `keypo-signer sign <userOpHash> --key <label> --format json`
-3. Touch ID / passcode prompt appears (depending on key policy)
-4. Parse (r, s) from JSON response
-5. Encode signature via `AccountImplementation::encode_signature`
-6. Submit to bundler
+- Read from state store, display all chain deployments for the key
+- Show address, implementation, chain ID, bundler URL, paymaster URL, public key coordinates
 
-### 5.2 `send` Command
+### 5.2 `balance` Command
 
-Wire the CLI's `send` subcommand:
+Wire the CLI's `balance` subcommand:
 
-- Look up `AccountRecord` from state store by `(key_label, chain_id)`
-- Build a single `Call` from `--to`, `--value`, `--data`
-- Call `transaction::execute`
-- Print progress: building, signing (Touch ID), submitted, confirmed
-
-### 5.3 `batch` Command
-
-Wire the CLI's `batch` subcommand:
-
-- Parse `--calls` JSON file into `Vec<Call>`
-- Call `transaction::execute` with the full batch
-- Same progress output
-
-### 5.4 `info` and `balance` Commands
-
-Wire the remaining read-only commands:
-
-- `info` — read from state store, display all chain deployments for the key
-- `balance` — query all tokens across all chains where the account is deployed, with GraphQL-style filtering
-
-The `balance` command should:
-- Default to showing all tokens on all chains the account is deployed on
+- Default to showing native balance on all chains the account is deployed on
 - Support `--chain <ID>` to filter to a specific chain
 - Support `--token <SYMBOL_OR_ADDRESS>` to filter to a specific token
 - Support `--query <FILE>` to run a structured query from a JSON file that defines the filtering interface (tokens, chains, minimum balance thresholds, etc.)
 
 The query file interface is defined in keypo-wallet spec §5.3.
 
-### 5.5 Automated Tests
+### 5.3 Automated Tests
 
-- Unit tests for CLI argument parsing → command dispatch
-- Unit tests for `send` and `batch` call encoding
+- Unit tests for `info` display formatting
 - Unit tests for `balance` query parsing and filtering
 - Integration tests with MockSigner (reuse Phase 4 infrastructure)
 
@@ -742,25 +782,27 @@ cargo test
 
 **Gate: All automated tests pass before manual end-to-end test.**
 
-### 5.6 Manual End-to-End Test (Human Testing — Last)
+### 5.4 Manual End-to-End Test (Human Testing — Last)
 
-The full flow on testnet with real Secure Enclave signing:
+The full flow on testnet with real Secure Enclave signing. The account `0xC66025eaa0aaA2d2619F70423d8c0246625EBc13` was set up in Phase 3 with the `test-open` key.
 
 ```bash
-# Send testnet ETH
-keypo-wallet send --key testnet-key --to 0x<faucet-or-self> --value 0.0001
+# Send 0-value self-transfer (Secure Enclave signing)
+keypo-wallet send --key test-open --to 0xC66025eaa0aaA2d2619F70423d8c0246625EBc13 --value 0 \
+    --bundler <pimlico-url>
 
-# Batch: send ETH to two addresses
-keypo-wallet batch --key testnet-key --calls test-batch.json
+# Paymaster-sponsored send
+keypo-wallet send --key test-open --to 0xC66025eaa0aaA2d2619F70423d8c0246625EBc13 --value 0 \
+    --bundler <pimlico-url> --paymaster <paymaster-url>
 
-# Check balance — all tokens, all chains
-keypo-wallet balance --key testnet-key
+# Batch: send to two addresses
+keypo-wallet batch --key test-open --calls test-batch.json --bundler <pimlico-url>
+
+# Check balance
+keypo-wallet balance --key test-open
 
 # Check balance — specific chain
-keypo-wallet balance --key testnet-key --chain 84532
-
-# Check balance — structured query
-keypo-wallet balance --key testnet-key --query balance-query.json
+keypo-wallet balance --key test-open --chain 84532
 ```
 
 **Milestone: First real P-256-signed transaction confirmed on-chain via ERC-4337 bundler. The full pipeline works: Secure Enclave → keypo-signer → keypo-wallet → bundler → EntryPoint → smart account → execution.**
@@ -775,11 +817,9 @@ keypo-wallet balance --key testnet-key --query balance-query.json
 
 **Depends on:** Phase 5 (core flow working)
 
-### 6.1 Gas-Sponsored Transaction Test
+### 6.1 Gas-Sponsored Transaction Test ✅ (Completed in Phase 4)
 
-- Test a gas-sponsored transaction using ERC-7677 paymaster (Pimlico on Base Sepolia)
-- The smart account doesn't need ETH for gas — confirm this works end-to-end
-- Wire `--paymaster <URL>` through the CLI
+Gas-sponsored transactions via ERC-7677 paymaster are fully working — verified in Phase 4 integration test `test_send_with_paymaster`. The `--paymaster <URL>` and `--paymaster-policy <ID>` flags are wired in the CLI.
 
 ### 6.2 Error Handling Polish
 
@@ -841,13 +881,13 @@ After all automated CI tests pass:
 | **1.5 — Fast Deploy** | 0.5–1 day | ↕ Phase 1 tests | Minimal deployment for Rust work to begin | ✅ Superseded — full Phase 1 completed |
 | **2 — Crate Scaffold** | 2–3 days | ↕ Phase 1 | Rust crate with types, traits, signer, state, ERC-7677 | ✅ Complete — 51/51 tests, all modules implemented |
 | **3 — Setup Flow** | 3–5 days | — | `keypo-wallet setup` working on testnet + mock signer test account | ✅ Complete — 67/67 tests, EIP-7702 delegation verified on Base Sepolia |
-| **4 — Bundler** | 3–5 days | — | ERC-7769 BundlerClient + ERC-7677 paymaster + UserOp | Automated tests pass, mock-signed submission passes on-chain |
-| **5 — Signing + CLI** | 2–3 days | — | Full `send`, `batch`, `balance` commands | Automated tests pass, then first real P-256 tx |
+| **4 — Bundler + CLI** | 3–5 days | — | ERC-7769 BundlerClient + ERC-7677 paymaster + UserOp + send/batch CLI | ✅ Complete — 90/90 tests, mock-signed e2e on Base Sepolia (self-funded + paymaster) |
+| **5 — Query + E2E** | 2–3 days | — | `info`, `balance` commands + first real Secure Enclave tx | Automated tests pass, then first real P-256 tx |
 | **6 — Hardening** | 3–5 days | — | CI, docs, error polish, gas-sponsored tx | CI green, all manual testing passes |
 
 **Total: 16–27 days** (roughly 3.5–6 weeks with buffer for unknowns)
 
-Phases 0, 1, 1.5, 2, and 3 are complete. Phase 4 can proceed immediately — the setup flow is working end-to-end on Base Sepolia, mock-signer test accounts can be created programmatically, and the `account::setup()` function is fully tested with 67 automated tests. Everything after Phase 3 is sequential because each phase depends on artifacts from the previous one.
+Phases 0, 1, 1.5, 2, 3, and 4 are complete. Phase 4 absorbed the `send`/`batch` CLI wiring originally planned for Phase 5 — the CLI is fully wired with `KeypoSigner` and ready for Secure Enclave signing. Phase 5 focuses on the remaining `info`/`balance` query commands and the first manual end-to-end test with real Secure Enclave signing. Everything after Phase 4 is sequential because each phase depends on artifacts from the previous one.
 
 ---
 

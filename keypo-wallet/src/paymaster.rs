@@ -1,10 +1,13 @@
 use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 
-/// ERC-7677 paymaster client (types only — HTTP calls deferred to Phase 4).
+use crate::error::{Error, Result};
+
+/// ERC-7677 paymaster client.
 pub struct PaymasterClient {
     pub url: String,
     pub context: serde_json::Value,
+    client: reqwest::Client,
 }
 
 impl PaymasterClient {
@@ -12,6 +15,7 @@ impl PaymasterClient {
         Self {
             url: url.into(),
             context: serde_json::Value::Null,
+            client: reqwest::Client::new(),
         }
     }
 
@@ -19,7 +23,56 @@ impl PaymasterClient {
         Self {
             url: url.into(),
             context,
+            client: reqwest::Client::new(),
         }
+    }
+
+    /// Calls `pm_getPaymasterStubData` via HTTP.
+    pub async fn get_paymaster_stub_data(
+        &self,
+        user_op: &PaymasterUserOp,
+        entry_point: Address,
+        chain_id: u64,
+    ) -> Result<PaymasterStubResponse> {
+        let params = serde_json::json!([
+            user_op,
+            format!("{:?}", entry_point),
+            format!("0x{:x}", chain_id),
+            self.context,
+        ]);
+        let result = crate::rpc::json_rpc_post(
+            &self.client,
+            &self.url,
+            "pm_getPaymasterStubData",
+            params,
+        )
+        .await
+        .map_err(|e| Error::Paymaster(e.to_string()))?;
+        serde_json::from_value(result).map_err(|e| Error::Paymaster(e.to_string()))
+    }
+
+    /// Calls `pm_getPaymasterData` via HTTP.
+    pub async fn get_paymaster_data(
+        &self,
+        user_op: &PaymasterUserOp,
+        entry_point: Address,
+        chain_id: u64,
+    ) -> Result<PaymasterDataResponse> {
+        let params = serde_json::json!([
+            user_op,
+            format!("{:?}", entry_point),
+            format!("0x{:x}", chain_id),
+            self.context,
+        ]);
+        let result = crate::rpc::json_rpc_post(
+            &self.client,
+            &self.url,
+            "pm_getPaymasterData",
+            params,
+        )
+        .await
+        .map_err(|e| Error::Paymaster(e.to_string()))?;
+        serde_json::from_value(result).map_err(|e| Error::Paymaster(e.to_string()))
     }
 
     /// Builds a `pm_getPaymasterStubData` JSON-RPC request.

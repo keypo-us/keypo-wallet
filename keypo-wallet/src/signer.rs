@@ -164,7 +164,7 @@ impl P256Signer for KeypoSigner {
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock {
     use super::*;
-    use p256::ecdsa::{signature::Signer as _, Signature, SigningKey};
+    use p256::ecdsa::{signature::hazmat::PrehashSigner, Signature, SigningKey};
     use std::collections::HashMap;
     use std::sync::Mutex;
 
@@ -247,7 +247,8 @@ pub mod mock {
                 .get(label)
                 .ok_or_else(|| Error::SignerNotFound(label.to_string()))?;
 
-            let sig: Signature = sk.sign(digest);
+            let sig: Signature = sk.sign_prehash(digest)
+                .map_err(|e| Error::Other(format!("P-256 signing failed: {e}")))?;
             // Normalize to low-S
             let sig = sig.normalize_s().unwrap_or(sig);
             let (r_bytes, s_bytes) = sig.split_bytes();

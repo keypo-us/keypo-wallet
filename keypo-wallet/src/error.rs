@@ -55,6 +55,9 @@ pub enum Error {
     #[error("multi-chain setup not supported: key '{0}' already has an account")]
     MultiChainNotSupported(String),
 
+    #[error("receipt timeout: waited {0}s for UserOp {1}")]
+    ReceiptTimeout(u64, String),
+
     #[error("{0}")]
     Other(String),
 }
