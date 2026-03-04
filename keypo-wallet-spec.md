@@ -95,6 +95,8 @@ Key policies supported by keypo-signer-cli:
 └──────────────────────────────────────────────────────────┘
 ```
 
+**Detailed architecture diagrams** (wallet creation flow, transaction sending flow, paymaster integration, component overview) are in [`docs/architecture.md`](docs/architecture.md).
+
 ---
 
 ## 3. The `AccountImplementation` Trait
@@ -269,9 +271,9 @@ keypo-wallet/
 │   ├── rpc.rs                  # Shared JSON-RPC helper (used by bundler + paymaster)
 │   ├── state.rs                # Local state persistence
 │   ├── types.rs                # Shared types (Call, P256PublicKey, BalanceQuery, etc.)
-│   └── error.rs                # Error types
+│   └── error.rs                # Error types + suggestion() method
 ├── src/bin/
-│   └── main.rs                 # CLI entry point
+│   └── main.rs                 # CLI entry point (--verbose, long_about, error hints)
 ├── abi/                        # Contract ABIs (from keypo-account build)
 │   └── KeypoAccount.json
 ├── query/                      # Example balance query files
@@ -280,6 +282,10 @@ keypo-wallet/
     ├── integration_setup.rs    # End-to-end setup on Base Sepolia
     ├── integration_send.rs     # End-to-end transaction on Base Sepolia
     └── integration_balance.rs  # Balance query on Base Sepolia
+
+docs/
+├── architecture.md             # Block diagrams: wallet creation, tx sending, paymaster flow
+└── manual-testing.md           # Manual test checklist for Phase 6.5
 ```
 
 ### 4.3 Core Types
@@ -376,6 +382,17 @@ struct ChainConfig {
 ///   Calls: keypo-signer sign <hex-digest> --key <label> --format json
 ///   Parses: "r" and "s" fields — hex-encoded 32-byte big-endian
 ///   Signatures are low-S normalized by keypo-signer
+///
+///   CRITICAL — Pre-hashed signing:
+///   The digest passed to keypo-signer is a 32-byte hash (e.g. keccak256
+///   of the UserOp hash). keypo-signer MUST sign this digest directly
+///   without applying additional SHA-256 hashing. CryptoKit's default
+///   `signature(for: Data)` applies SHA-256, which would produce a
+///   signature over SHA256(digest) instead of digest — breaking on-chain
+///   P-256 verification. keypo-signer handles this by detecting 32-byte
+///   inputs and using the pre-hashed signing path.
+///   See: keypo-signer-cli SecureEnclaveManager.signData()
+///
 ///   Test: Mock subprocess returning valid signature JSON
 ///   Test: Verify (r, s) are correctly parsed as B256
 ///   Test: Mock subprocess failure (Touch ID cancelled), verify error
@@ -734,13 +751,13 @@ testnet-key (0x9876...5432):
     ETH:  0.008900
     USDC: 100.000000
 
-# 4. Check info — shows all chain deployments
+# 4. Check info — shows all chain deployments (full addresses, not truncated)
 $ keypo-wallet info --key testnet-key
 testnet-key (biometric):
-  Address: 0x9876...5432
+  Address: 0x9876543210abcdef9876543210abcdef98765432
   Chains:
     Base Sepolia (84532):
-      Impl:     KeypoAccount @ 0x...
+      Impl:     KeypoAccount @ 0x6d1566f9aAcf9c06969D7BF846FA090703A38E43
       Deployed: 2026-03-01T12:00:00Z
 ```
 
@@ -795,6 +812,8 @@ The key policy is stored in the `AccountRecord` and cannot be changed after key 
 ### 6.3 Process Boundary
 
 Only digests (32 bytes) and signatures (64 bytes) cross the subprocess boundary. No private key material enters the Rust process except the ephemeral secp256k1 key during setup.
+
+**Pre-hashed signing requirement:** The 32-byte digest sent to keypo-signer is a keccak256 hash (the UserOp hash). The signer must sign this digest directly without applying additional hashing. Both `MockSigner` (Rust, via `PrehashSigner::sign_prehash()`) and `keypo-signer` (Swift, via `SHA256Digest` cast for 32-byte inputs) handle this correctly. See §4.4 and `docs/architecture.md` for the full signing flow.
 
 ### 6.4 Ephemeral Key Security
 

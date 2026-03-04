@@ -178,6 +178,8 @@ When a UserOperation targets this account:
 
 The **digest that the client must sign is `userOpHash`**: `keccak256(abi.encode(keccak256(packedUserOp), entryPoint, chainId))`
 
+**CRITICAL — Pre-hashed signing:** The client's P-256 signer must sign this 32-byte `userOpHash` digest **directly, without applying additional SHA-256 hashing**. The on-chain P-256 verification (via RIP-7212 precompile or Solidity fallback) checks the signature against the raw `userOpHash`. If the signer applies SHA-256 before signing (as some P-256 libraries do by default, e.g., CryptoKit's `signature(for: Data)` or the `p256` crate's `Signer::sign()`), the resulting signature will be over `SHA256(userOpHash)` instead of `userOpHash`, and on-chain verification will fail with `AA24 signature error`. See `keypo-signer-cli/Sources/KeypoCore/SecureEnclaveManager.swift` and `keypo-wallet-spec.md §4.4` for implementation details.
+
 For the WebAuthn path, `userOpHash` becomes the WebAuthn challenge.
 
 ---
