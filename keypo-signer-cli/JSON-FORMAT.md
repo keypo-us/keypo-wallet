@@ -1,3 +1,10 @@
+---
+title: keypo-signer JSON Output Format
+owner: @davidblumenfeld
+last_verified: 2026-03-05
+status: current
+---
+
 # keypo-signer JSON Output Format
 
 Verified output format for `keypo-signer` commands when using `--format json`. This document is the reference for the Rust crate's `KeypoSigner` parser.

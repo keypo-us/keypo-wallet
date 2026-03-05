@@ -1,0 +1,22 @@
+name: Documentation checks
+
+on:
+  push:
+    paths:
+      - 'docs/**'
+      - 'CLAUDE.md'
+      - '**/README.md'
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'CLAUDE.md'
+      - '**/README.md'
+
+jobs:
+  check-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run documentation checks
+        run: bash scripts/check-docs.sh

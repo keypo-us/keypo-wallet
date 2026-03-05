@@ -1,3 +1,10 @@
+---
+title: Deployment Records
+owner: @davidblumenfeld
+last_verified: 2026-03-05
+status: current
+---
+
 # Deployment Records
 
 This directory contains per-chain JSON files recording smart account contract deployments.

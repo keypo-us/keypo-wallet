@@ -277,6 +277,7 @@ pub mod mock {
                 .get(label)
                 .ok_or_else(|| Error::SignerNotFound(label.to_string()))?;
 
+            // See docs/decisions/002-p256-prehash-signing.md
             let sig: Signature = sk
                 .sign_prehash(digest)
                 .map_err(|e| Error::Other(format!("P-256 signing failed: {e}")))?;

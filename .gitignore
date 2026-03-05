@@ -3,6 +3,8 @@
 
 # Claude Code (settings.local.json is per-developer; .claude/commands/ is shared and tracked)
 .claude/settings.local.json
+.claude/plans/
+.claude/agents/
 
 # Foundry
 keypo-account/out/

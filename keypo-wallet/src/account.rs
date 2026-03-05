@@ -271,7 +271,7 @@ pub async fn setup(
         return Err(Error::MultiChainNotSupported(config.key_label.clone()));
     }
 
-    // 7. Generate ephemeral EOA
+    // 7. Generate ephemeral EOA — see docs/decisions/001-eip7702-ephemeral-eoa.md
     let ephemeral_signer = PrivateKeySigner::random();
     let eoa_addr = ephemeral_signer.address();
     tracing::info!("Ephemeral EOA: {eoa_addr}");

@@ -87,7 +87,7 @@ impl KeypoAccountImpl {
     }
 
     /// Builds the ERC-7821 batch mode bytes32.
-    /// mode byte[0] = 0x01, rest zero.
+    /// mode byte[0] = 0x01, rest zero. See docs/decisions/003-erc7821-batch-mode.md
     fn batch_mode() -> B256 {
         let mut mode = [0u8; 32];
         mode[0] = 0x01;

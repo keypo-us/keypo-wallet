@@ -16,7 +16,7 @@ A CLI that turns your Mac into a programmable hardware wallet. Key features:
 | `keypo-signer-cli/` | Swift CLI — Secure Enclave P-256 key management (macOS) |
 | `homebrew/` | Homebrew tap formula for keypo-signer |
 | `deployments/` | Per-chain deployment records (JSON) |
-| `docs/` | Detailed documentation including technical architecture and how keypo-signer CLI works |
+| `docs/` | Architecture, conventions, ADRs, setup, deployment -- see [CLAUDE.md](CLAUDE.md) for full index |
 
 ## Prerequisites
 
@@ -156,6 +156,10 @@ cd keypo-account && forge test -vvv
 cd keypo-wallet && cargo fmt --check
 cd keypo-wallet && cargo clippy --all-targets -- -D warnings
 ```
+
+## Documentation
+
+See [CLAUDE.md](CLAUDE.md) for the documentation index and coding conventions.
 
 ## Integration Tests
 

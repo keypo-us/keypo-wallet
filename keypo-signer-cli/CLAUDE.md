@@ -1,3 +1,10 @@
+---
+title: keypo-signer-cli Project Guide
+owner: @davidblumenfeld
+last_verified: 2026-03-05
+status: current
+---
+
 # CLAUDE.md
 
 ## Project Overview

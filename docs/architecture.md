@@ -1,3 +1,10 @@
+---
+title: Architecture Overview
+owner: @davidblumenfeld
+last_verified: 2026-03-05
+status: current
+---
+
 # Keypo Wallet Architecture
 
 ERC-4337 smart wallet with P-256 (Secure Enclave) signing, EIP-7702 delegation, and ERC-7821 batch execution.
