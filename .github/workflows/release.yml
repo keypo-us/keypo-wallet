@@ -1,0 +1,187 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify versions match tag
+        run: |
+          TAG_VERSION=${GITHUB_REF_NAME#v}
+          RUST_VERSION=$(grep '^version' keypo-wallet/Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          SWIFT_VERSION=$(grep 'public let keypoVersion =' keypo-signer-cli/Sources/KeypoCore/Models.swift | sed 's/.*"\(.*\)".*/\1/')
+          echo "Tag:   $TAG_VERSION"
+          echo "Rust:  $RUST_VERSION"
+          echo "Swift: $SWIFT_VERSION"
+          if [ "$RUST_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Rust version ($RUST_VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+          if [ "$SWIFT_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Swift version ($SWIFT_VERSION) does not match tag ($TAG_VERSION)"
+            exit 1
+          fi
+          echo "VERSION=$TAG_VERSION" >> $GITHUB_ENV
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Log toolchain versions
+        run: |
+          swift --version
+          rustc --version
+          cargo --version
+
+      - name: Run Swift tests
+        working-directory: keypo-signer-cli
+        run: swift test
+
+      - name: Run Rust tests
+        working-directory: keypo-wallet
+        run: cargo test
+
+      - name: Build Swift release
+        working-directory: keypo-signer-cli
+        run: swift build -c release
+
+      - name: Build Rust release
+        working-directory: keypo-wallet
+        run: cargo build --release
+
+      - name: Verify architectures
+        run: |
+          file keypo-signer-cli/.build/release/keypo-signer | grep -q arm64 || {
+            echo "::error::keypo-signer binary is not arm64"; exit 1
+          }
+          file keypo-wallet/target/release/keypo-wallet | grep -q arm64 || {
+            echo "::error::keypo-wallet binary is not arm64"; exit 1
+          }
+
+      - name: Import signing certificate
+        env:
+          DEVELOPER_ID_CERT_P12: ${{ secrets.DEVELOPER_ID_CERT_P12 }}
+          DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+          CI_KEYCHAIN_PASSWORD: ${{ secrets.CI_KEYCHAIN_PASSWORD }}
+        run: |
+          echo "$DEVELOPER_ID_CERT_P12" | base64 --decode > certificate.p12
+          security create-keychain -p "$CI_KEYCHAIN_PASSWORD" ci.keychain
+          security default-keychain -s ci.keychain
+          security unlock-keychain -p "$CI_KEYCHAIN_PASSWORD" ci.keychain
+          security set-keychain-settings -t 3600 -u ci.keychain
+          security import certificate.p12 -k ci.keychain \
+            -P "$DEVELOPER_ID_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k "$CI_KEYCHAIN_PASSWORD" ci.keychain
+          security list-keychains -d user -s ci.keychain login.keychain
+          rm certificate.p12
+
+      - name: Code-sign binaries
+        env:
+          DEVELOPER_ID_CERT_NAME: ${{ secrets.DEVELOPER_ID_CERT_NAME }}
+        run: |
+          codesign --force --sign "$DEVELOPER_ID_CERT_NAME" \
+            --options runtime --timestamp keypo-signer-cli/.build/release/keypo-signer
+          codesign --verify --deep --strict keypo-signer-cli/.build/release/keypo-signer
+
+          codesign --force --sign "$DEVELOPER_ID_CERT_NAME" \
+            --options runtime --timestamp keypo-wallet/target/release/keypo-wallet
+          codesign --verify --deep --strict keypo-wallet/target/release/keypo-wallet
+
+      - name: Notarize binaries
+        env:
+          NOTARIZATION_APPLE_ID: ${{ secrets.NOTARIZATION_APPLE_ID }}
+          NOTARIZATION_TEAM_ID: ${{ secrets.NOTARIZATION_TEAM_ID }}
+          NOTARIZATION_APP_PASSWORD: ${{ secrets.NOTARIZATION_APP_PASSWORD }}
+        run: |
+          mkdir -p notarize-staging
+          cp keypo-signer-cli/.build/release/keypo-signer notarize-staging/
+          cp keypo-wallet/target/release/keypo-wallet notarize-staging/
+          ditto -c -k notarize-staging keypo-binaries.zip
+
+          SUBMIT_OUTPUT=$(xcrun notarytool submit keypo-binaries.zip \
+            --apple-id "$NOTARIZATION_APPLE_ID" \
+            --team-id "$NOTARIZATION_TEAM_ID" \
+            --password "$NOTARIZATION_APP_PASSWORD" \
+            --wait --timeout 600 2>&1) || {
+            echo "$SUBMIT_OUTPUT"
+            SUBMISSION_ID=$(echo "$SUBMIT_OUTPUT" | grep 'id:' | head -1 | awk '{print $2}')
+            if [ -n "$SUBMISSION_ID" ]; then
+              xcrun notarytool log "$SUBMISSION_ID" \
+                --apple-id "$NOTARIZATION_APPLE_ID" \
+                --team-id "$NOTARIZATION_TEAM_ID" \
+                --password "$NOTARIZATION_APP_PASSWORD"
+            fi
+            exit 1
+          }
+          echo "$SUBMIT_OUTPUT"
+          rm -rf notarize-staging keypo-binaries.zip
+
+      - name: Create archive
+        run: |
+          ARCHIVE="keypo-wallet-${VERSION}-macos-arm64.tar.gz"
+          mkdir -p staging
+          cp keypo-wallet/target/release/keypo-wallet staging/
+          cp keypo-signer-cli/.build/release/keypo-signer staging/
+          cp keypo-signer-cli/LICENSE staging/
+          tar -czf "$ARCHIVE" -C staging .
+          SHA256=$(shasum -a 256 "$ARCHIVE" | awk '{print $1}')
+          echo "ARCHIVE=$ARCHIVE" >> $GITHUB_ENV
+          echo "SHA256=$SHA256" >> $GITHUB_ENV
+          echo "::notice::SHA256: $SHA256"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat > release_notes.md <<EOF
+          ## What's included
+
+          - **keypo-wallet** — ERC-4337 smart wallet CLI
+          - **keypo-signer** — Secure Enclave P-256 key manager
+
+          ## Install
+
+          \`\`\`bash
+          brew tap keypo-us/tap
+          brew install keypo-wallet
+          \`\`\`
+
+          ## SHA256
+          \`$SHA256\`
+          EOF
+
+          if gh release view "v$VERSION" &>/dev/null; then
+            gh release upload "v$VERSION" "$ARCHIVE" --clobber
+          else
+            gh release create "v$VERSION" "$ARCHIVE" \
+              --title "keypo-wallet v$VERSION" \
+              --notes-file release_notes.md
+          fi
+
+      - name: Update Homebrew tap
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          gh workflow run update-formula.yml \
+            --repo keypo-us/homebrew-tap \
+            -f version=$VERSION \
+            -f sha256=$SHA256
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain ci.keychain || true

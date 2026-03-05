@@ -57,6 +57,8 @@ pub struct ChainDeployment {
     pub paymaster_url: Option<String>,
     pub rpc_url: String,
     pub deployed_at: String,
+    #[serde(default)]
+    pub tx_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -67,6 +69,15 @@ pub struct AccountRecord {
     pub public_key: P256PublicKey,
     pub chains: Vec<ChainDeployment>,
     pub created_at: String,
+}
+
+/// Entry for wallet-list output.
+#[derive(Debug, Clone)]
+pub struct WalletListEntry {
+    pub label: String,
+    pub address: Address,
+    pub chains: Vec<String>,
+    pub eth_balance: Option<U256>,
 }
 
 /// Structured balance query file (spec §5.3).
@@ -181,6 +192,7 @@ mod tests {
                     paymaster_url: None,
                     rpc_url: "https://sepolia.base.org".into(),
                     deployed_at: "2026-03-01T00:00:00Z".into(),
+                    tx_hash: None,
                 },
                 ChainDeployment {
                     chain_id: 1,
@@ -191,6 +203,7 @@ mod tests {
                     paymaster_url: Some("https://paymaster.example.com".into()),
                     rpc_url: "https://eth.example.com".into(),
                     deployed_at: "2026-03-02T00:00:00Z".into(),
+                    tx_hash: None,
                 },
             ],
             created_at: "2026-03-01T00:00:00Z".into(),

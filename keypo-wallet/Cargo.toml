@@ -28,6 +28,7 @@ tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
 url = "2"
 reqwest = { version = "0.12", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
+toml = "0.8"
 p256 = { version = "0.13", features = ["ecdsa"], optional = true }
 
 [features]

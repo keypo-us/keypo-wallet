@@ -4,6 +4,7 @@ use std::time::Duration;
 use alloy::primitives::{Address, Bytes, U256};
 use clap::{Parser, Subcommand};
 use keypo_wallet::account::{self, FundingStrategy, SetupConfig, SETUP_FUNDING_AMOUNT};
+use keypo_wallet::config;
 use keypo_wallet::impls::KeypoAccountImpl;
 use keypo_wallet::signer::KeypoSigner;
 use keypo_wallet::state::StateStore;
@@ -15,7 +16,8 @@ use keypo_wallet::AccountImplementation;
     name = "keypo-wallet",
     about = "Keypo smart wallet CLI",
     long_about = "Keypo smart wallet CLI — manage ERC-4337 smart accounts with P-256 (Secure Enclave) signing.\n\n\
-        Requires keypo-signer for key management: brew install keypo-us/tap/keypo-signer"
+        Requires keypo-signer for key management: brew install keypo-us/tap/keypo-signer",
+    version
 )]
 struct Cli {
     #[command(subcommand)]
@@ -28,6 +30,32 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Initialize config file
+    #[command(
+        long_about = "Initialize ~/.keypo/config.toml with RPC and bundler URLs.\n\n\
+            Prompts interactively for URLs, or use --rpc/--bundler flags for non-interactive mode."
+    )]
+    Init {
+        /// RPC URL (skip interactive prompt)
+        #[arg(long)]
+        rpc: Option<String>,
+
+        /// Bundler URL (skip interactive prompt)
+        #[arg(long)]
+        bundler: Option<String>,
+
+        /// Paymaster URL (optional)
+        #[arg(long)]
+        paymaster: Option<String>,
+    },
+
+    /// Manage config file
+    #[command(
+        subcommand,
+        long_about = "View or modify ~/.keypo/config.toml settings."
+    )]
+    Config(ConfigAction),
+
     /// Set up a smart account on a chain
     #[command(long_about = "Set up a smart account on a chain.\n\n\
             Signs an EIP-7702 delegation to the KeypoAccount implementation, then sends an \
@@ -106,6 +134,10 @@ enum Commands {
         /// Standard RPC URL (overrides stored deployment, used for nonce/gas queries)
         #[arg(long)]
         rpc: Option<String>,
+
+        /// Skip paymaster even if configured
+        #[arg(long)]
+        no_paymaster: bool,
     },
 
     /// Send a batch of calls
@@ -140,6 +172,10 @@ enum Commands {
         /// Standard RPC URL (overrides stored deployment, used for nonce/gas queries)
         #[arg(long)]
         rpc: Option<String>,
+
+        /// Skip paymaster even if configured
+        #[arg(long)]
+        no_paymaster: bool,
     },
 
     /// Show account info
@@ -187,6 +223,161 @@ enum Commands {
         #[arg(long)]
         format: Option<String>,
     },
+
+    // -- Signer passthrough commands --
+    /// Create a new signing key
+    #[command(
+        long_about = "Create a new P-256 signing key in the Secure Enclave via keypo-signer."
+    )]
+    Create {
+        /// Key label
+        #[arg(long)]
+        label: String,
+
+        /// Access policy (open/passcode/biometric)
+        #[arg(long, default_value = "biometric")]
+        policy: String,
+    },
+
+    /// List all signing keys
+    #[command(long_about = "List all P-256 keys managed by keypo-signer.")]
+    List {
+        /// Output format (json/pretty)
+        #[arg(long)]
+        format: Option<String>,
+    },
+
+    /// Show key info
+    #[command(
+        name = "key-info",
+        long_about = "Show details for a specific signing key."
+    )]
+    KeyInfo {
+        /// Key label
+        label: String,
+
+        /// Output format (json/pretty/raw)
+        #[arg(long)]
+        format: Option<String>,
+    },
+
+    /// Sign a digest
+    #[command(long_about = "Sign a 32-byte hex digest with a P-256 key via keypo-signer.")]
+    Sign {
+        /// Hex-encoded 32-byte digest
+        digest: String,
+
+        /// Key label
+        #[arg(long)]
+        key: String,
+
+        /// Output format (json/pretty/raw)
+        #[arg(long)]
+        format: Option<String>,
+    },
+
+    /// Verify a signature
+    #[command(long_about = "Verify a P-256 signature against a digest and key.")]
+    Verify {
+        /// Hex-encoded 32-byte digest
+        digest: String,
+
+        /// Key label
+        #[arg(long)]
+        key: String,
+
+        /// r component (hex)
+        #[arg(long)]
+        r: String,
+
+        /// s component (hex)
+        #[arg(long)]
+        s: String,
+    },
+
+    /// Delete a signing key
+    #[command(long_about = "Delete a signing key from the Secure Enclave via keypo-signer.")]
+    Delete {
+        /// Key label
+        #[arg(long)]
+        label: String,
+
+        /// Skip confirmation prompt
+        #[arg(long)]
+        confirm: bool,
+    },
+
+    /// Rotate a signing key
+    #[command(long_about = "Rotate a signing key via keypo-signer.")]
+    Rotate {
+        /// Key label to rotate
+        #[arg(long)]
+        label: String,
+    },
+
+    /// List all wallets (accounts)
+    #[command(
+        name = "wallet-list",
+        long_about = "List all smart wallet accounts with optional live balances.\n\n\
+            Shows address, chains, and ETH balance for each account. Use --no-balance to \
+            skip RPC queries."
+    )]
+    WalletList {
+        /// RPC URL for balance queries
+        #[arg(long)]
+        rpc: Option<String>,
+
+        /// Output format (table/json/csv)
+        #[arg(long)]
+        format: Option<String>,
+
+        /// Show full addresses (no truncation)
+        #[arg(long)]
+        no_truncate: bool,
+
+        /// Skip live balance queries
+        #[arg(long)]
+        no_balance: bool,
+    },
+
+    /// Show detailed wallet info
+    #[command(
+        name = "wallet-info",
+        long_about = "Show detailed info for a specific wallet account, including P-256 \
+            public key coordinates and per-chain deployment details."
+    )]
+    WalletInfo {
+        /// Key label
+        #[arg(long)]
+        key: String,
+
+        /// RPC URL for balance queries
+        #[arg(long)]
+        rpc: Option<String>,
+
+        /// Output format (table/json)
+        #[arg(long)]
+        format: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Clone)]
+enum ConfigAction {
+    /// Set a config value
+    Set {
+        /// Config key (e.g. network.rpc_url)
+        key: String,
+        /// Config value
+        value: String,
+    },
+    /// Show current config
+    Show {
+        /// Reveal sensitive values (API keys)
+        #[arg(long)]
+        reveal: bool,
+    },
+    /// Open config in $EDITOR
+    Edit,
 }
 
 #[tokio::main]
@@ -205,7 +396,27 @@ async fn main() {
         .try_init()
         .ok();
 
+    // Validate config on every invocation (if file exists)
+    let cfg = match config::load_config() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            if let Some(hint) = e.suggestion() {
+                eprintln!("  Hint: {hint}");
+            }
+            std::process::exit(1);
+        }
+    };
+
     let result = match cli.command {
+        Commands::Init {
+            rpc,
+            bundler,
+            paymaster,
+        } => run_init(rpc, bundler, paymaster).await,
+
+        Commands::Config(action) => run_config(action, &cfg).await,
+
         Commands::Setup {
             key,
             key_policy,
@@ -225,9 +436,11 @@ async fn main() {
                 paymaster,
                 implementation,
                 impl_name,
+                &cfg,
             )
             .await
         }
+
         Commands::Send {
             key,
             to,
@@ -238,6 +451,7 @@ async fn main() {
             paymaster,
             paymaster_policy,
             rpc,
+            no_paymaster,
         } => {
             run_send(
                 key,
@@ -249,9 +463,12 @@ async fn main() {
                 paymaster,
                 paymaster_policy,
                 rpc,
+                no_paymaster,
+                &cfg,
             )
             .await
         }
+
         Commands::Batch {
             key,
             calls,
@@ -260,6 +477,7 @@ async fn main() {
             paymaster,
             paymaster_policy,
             rpc,
+            no_paymaster,
         } => {
             run_batch(
                 key,
@@ -269,10 +487,14 @@ async fn main() {
                 paymaster,
                 paymaster_policy,
                 rpc,
+                no_paymaster,
+                &cfg,
             )
             .await
         }
+
         Commands::Info { key, chain_id } => run_info(key, chain_id).await,
+
         Commands::Balance {
             key,
             chain_id,
@@ -281,6 +503,62 @@ async fn main() {
             rpc,
             format,
         } => run_balance(key, chain_id, token, query, rpc, format).await,
+
+        // Signer passthrough commands
+        Commands::Create { label, policy } => {
+            run_signer_passthrough(&["create", "--label", &label, "--policy", &policy])
+        }
+        Commands::List { format } => {
+            let mut args = vec!["list"];
+            let fmt;
+            if let Some(ref f) = format {
+                fmt = f.clone();
+                args.extend(["--format", &fmt]);
+            }
+            run_signer_passthrough(&args)
+        }
+        Commands::KeyInfo { label, format } => {
+            let mut args = vec!["info", &label];
+            let fmt;
+            if let Some(ref f) = format {
+                fmt = f.clone();
+                args.extend(["--format", &fmt]);
+            }
+            run_signer_passthrough(&args)
+        }
+        Commands::Sign {
+            digest,
+            key,
+            format,
+        } => {
+            let mut args = vec!["sign", &digest, "--key", &key];
+            let fmt;
+            if let Some(ref f) = format {
+                fmt = f.clone();
+                args.extend(["--format", &fmt]);
+            }
+            run_signer_passthrough(&args)
+        }
+        Commands::Verify { digest, key, r, s } => {
+            run_signer_passthrough(&["verify", &digest, "--key", &key, "--r", &r, "--s", &s])
+        }
+        Commands::Delete { label, confirm } => {
+            let mut args = vec!["delete", "--label", &label];
+            if confirm {
+                args.push("--confirm");
+            }
+            run_signer_passthrough(&args)
+        }
+        Commands::Rotate { label } => run_signer_passthrough(&["rotate", "--label", &label]),
+
+        Commands::WalletList {
+            rpc,
+            format,
+            no_truncate,
+            no_balance,
+        } => run_wallet_list(rpc, format, no_truncate, no_balance, &cfg).await,
+
+        Commands::WalletInfo { key, rpc, format } => run_wallet_info(key, rpc, format, &cfg).await,
     };
 
     if let Err(e) = result {
@@ -294,6 +572,113 @@ async fn main() {
     }
 }
 
+// ---------------------------------------------------------------------------
+// init
+// ---------------------------------------------------------------------------
+
+async fn run_init(
+    rpc: Option<String>,
+    bundler: Option<String>,
+    paymaster: Option<String>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let path = config::config_path()?;
+
+    // Non-interactive mode if --rpc and --bundler provided
+    if let (Some(rpc_url), Some(bundler_url)) = (rpc, bundler) {
+        let cfg = config::Config {
+            rpc_url: Some(rpc_url),
+            bundler_url: Some(bundler_url),
+            paymaster_url: paymaster,
+            paymaster_policy_id: None,
+        };
+        config::save_config_at(&cfg, &path)?;
+        println!("Config saved to {}", path.display());
+        println!("Next: keypo-wallet setup --key <label>");
+        return Ok(());
+    }
+
+    // Interactive mode
+    let stdin = std::io::stdin();
+    let mut reader = stdin.lock();
+    let stdout = std::io::stdout();
+    let mut writer = stdout.lock();
+
+    config::run_init_interactive(&mut reader, &mut writer, &path, false)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// config
+// ---------------------------------------------------------------------------
+
+async fn run_config(
+    action: ConfigAction,
+    cfg: &Option<config::Config>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    match action {
+        ConfigAction::Set { key, value } => {
+            config::set_config_value(&key, &value)?;
+            println!("{key} = {}", config::redact_url(&value));
+        }
+        ConfigAction::Show { reveal } => {
+            print!("{}", config::format_config_show(cfg, reveal));
+        }
+        ConfigAction::Edit => {
+            let path = config::config_path()?;
+
+            // Create with template if missing
+            if !path.exists() {
+                let template = r#"# Keypo Wallet Configuration
+# See: keypo-wallet config show
+
+[network]
+# rpc_url = "https://sepolia.base.org"
+# bundler_url = "https://api.pimlico.io/v2/84532/rpc?apikey=YOUR_KEY"
+# paymaster_url = "https://api.pimlico.io/v2/84532/rpc?apikey=YOUR_KEY"
+# paymaster_policy_id = "sp_your_policy"
+"#;
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&path, template)?;
+            }
+
+            let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".into());
+            let status = std::process::Command::new(&editor)
+                .arg(&path)
+                .status()
+                .map_err(|e| format!("failed to launch editor '{editor}': {e}"))?;
+
+            if !status.success() {
+                return Err(format!("editor exited with {status}").into());
+            }
+
+            // Validate after edit
+            if let Err(e) = config::load_config_at(&path) {
+                eprintln!("Warning: config file has errors after editing: {e}");
+                eprintln!("Run 'keypo-wallet config edit' again to fix.");
+            } else {
+                println!("Config saved.");
+            }
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// signer passthrough
+// ---------------------------------------------------------------------------
+
+fn run_signer_passthrough(args: &[&str]) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let signer = KeypoSigner::new();
+    signer.run_raw(args)?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// setup (with config wiring)
+// ---------------------------------------------------------------------------
+
 #[allow(clippy::too_many_arguments)]
 async fn run_setup(
     key: String,
@@ -304,8 +689,9 @@ async fn run_setup(
     paymaster: Option<String>,
     implementation: Option<String>,
     impl_name: String,
+    cfg: &Option<config::Config>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
-    let rpc_url = rpc.ok_or("--rpc is required for setup")?;
+    let rpc_url = config::resolve_rpc(rpc.as_deref(), cfg)?;
 
     // Resolve implementation address and chain_id
     let (impl_address, resolved_chain_id, imp) = if let Some(ref addr_str) = implementation {
@@ -345,7 +731,7 @@ async fn run_setup(
     let signer = KeypoSigner::new();
     let mut state = StateStore::open()?;
 
-    let config = SetupConfig {
+    let setup_config = SetupConfig {
         key_label: key,
         key_policy,
         rpc_url: rpc_url.clone(),
@@ -370,7 +756,7 @@ async fn run_setup(
         }
     };
 
-    let result = account::setup(&config, &imp, &signer, &mut state, funding).await?;
+    let result = account::setup(&setup_config, &imp, &signer, &mut state, funding).await?;
 
     println!("Account setup complete!");
     println!("  Address:  {}", result.account_address);
@@ -380,7 +766,11 @@ async fn run_setup(
     Ok(())
 }
 
-/// Resolves account and chain deployment, applying CLI overrides for bundler/paymaster/rpc.
+// ---------------------------------------------------------------------------
+// resolve account + chain
+// ---------------------------------------------------------------------------
+
+/// Resolves account and chain deployment, applying CLI overrides and config fallbacks.
 fn resolve_account_and_chain(
     state: &StateStore,
     key: &str,
@@ -388,6 +778,7 @@ fn resolve_account_and_chain(
     bundler_override: Option<String>,
     paymaster_override: Option<String>,
     rpc_override: Option<String>,
+    cfg: &Option<config::Config>,
 ) -> std::result::Result<
     (
         keypo_wallet::types::AccountRecord,
@@ -411,13 +802,17 @@ fn resolve_account_and_chain(
         (acct.clone(), chain.clone())
     };
 
-    // Apply CLI overrides
+    // Apply CLI overrides, then config fallbacks
     let mut chain = chain;
     if let Some(b) = bundler_override {
         chain.bundler_url = Some(b);
+    } else if chain.bundler_url.is_none() {
+        chain.bundler_url = cfg.as_ref().and_then(|c| c.bundler_url.clone());
     }
     if let Some(p) = paymaster_override {
         chain.paymaster_url = Some(p);
+    } else if chain.paymaster_url.is_none() {
+        chain.paymaster_url = cfg.as_ref().and_then(|c| c.paymaster_url.clone());
     }
     if let Some(r) = rpc_override {
         chain.rpc_url = r;
@@ -425,6 +820,10 @@ fn resolve_account_and_chain(
 
     Ok((account, chain))
 }
+
+// ---------------------------------------------------------------------------
+// send
+// ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_arguments)]
 async fn run_send(
@@ -437,10 +836,28 @@ async fn run_send(
     paymaster: Option<String>,
     paymaster_policy: Option<String>,
     rpc: Option<String>,
+    no_paymaster: bool,
+    cfg: &Option<config::Config>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let state = StateStore::open()?;
-    let (account, chain) =
-        resolve_account_and_chain(&state, &key, chain_id, bundler, paymaster, rpc)?;
+
+    // Resolve paymaster: if --no-paymaster, suppress
+    let effective_paymaster = if no_paymaster { None } else { paymaster };
+    let (account, chain) = resolve_account_and_chain(
+        &state,
+        &key,
+        chain_id,
+        bundler,
+        effective_paymaster,
+        rpc,
+        cfg,
+    )?;
+
+    // If --no-paymaster, also clear paymaster_url from chain
+    let mut chain = chain;
+    if no_paymaster {
+        chain.paymaster_url = None;
+    }
 
     let signer = KeypoSigner::new();
     let imp = load_deployments_impl();
@@ -466,7 +883,8 @@ async fn run_send(
         data: call_data,
     };
 
-    let pm_context = paymaster_policy.map(|id| serde_json::json!({"sponsorshipPolicyId": id}));
+    let pm_policy = config::resolve_paymaster_policy(paymaster_policy.as_deref(), cfg);
+    let pm_context = pm_policy.map(|id| serde_json::json!({"sponsorshipPolicyId": id}));
     let result = keypo_wallet::transaction::execute_with_context(
         &account,
         &chain,
@@ -485,6 +903,11 @@ async fn run_send(
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// batch
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_arguments)]
 async fn run_batch(
     key: String,
     calls_path: String,
@@ -493,10 +916,26 @@ async fn run_batch(
     paymaster: Option<String>,
     paymaster_policy: Option<String>,
     rpc: Option<String>,
+    no_paymaster: bool,
+    cfg: &Option<config::Config>,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let state = StateStore::open()?;
-    let (account, chain) =
-        resolve_account_and_chain(&state, &key, chain_id, bundler, paymaster, rpc)?;
+
+    let effective_paymaster = if no_paymaster { None } else { paymaster };
+    let (account, chain) = resolve_account_and_chain(
+        &state,
+        &key,
+        chain_id,
+        bundler,
+        effective_paymaster,
+        rpc,
+        cfg,
+    )?;
+
+    let mut chain = chain;
+    if no_paymaster {
+        chain.paymaster_url = None;
+    }
 
     let signer = KeypoSigner::new();
     let imp = load_deployments_impl();
@@ -507,7 +946,8 @@ async fn run_batch(
     let calls: Vec<Call> = serde_json::from_str(&calls_json)
         .map_err(|e| format!("failed to parse calls JSON: {e}"))?;
 
-    let pm_context = paymaster_policy.map(|id| serde_json::json!({"sponsorshipPolicyId": id}));
+    let pm_policy = config::resolve_paymaster_policy(paymaster_policy.as_deref(), cfg);
+    let pm_context = pm_policy.map(|id| serde_json::json!({"sponsorshipPolicyId": id}));
     let result = keypo_wallet::transaction::execute_with_context(
         &account, &chain, &calls, &imp, &signer, pm_context,
     )
@@ -520,6 +960,10 @@ async fn run_batch(
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// info
+// ---------------------------------------------------------------------------
 
 async fn run_info(
     key: String,
@@ -534,6 +978,10 @@ async fn run_info(
     print!("{output}");
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// balance
+// ---------------------------------------------------------------------------
 
 async fn run_balance(
     key: String,
@@ -671,6 +1119,136 @@ async fn run_balance(
 
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// wallet-list
+// ---------------------------------------------------------------------------
+
+async fn run_wallet_list(
+    rpc: Option<String>,
+    format: Option<String>,
+    no_truncate: bool,
+    no_balance: bool,
+    cfg: &Option<config::Config>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use alloy::providers::{Provider, ProviderBuilder};
+    use keypo_wallet::query;
+    use keypo_wallet::types::WalletListEntry;
+
+    let state = StateStore::open()?;
+    let accounts = state.list_accounts();
+
+    if accounts.is_empty() {
+        println!("No wallets found. Run 'keypo-wallet setup' to create one.");
+        return Ok(());
+    }
+
+    // Resolve RPC for balance queries
+    let rpc_url = if no_balance {
+        None
+    } else {
+        // Try CLI --rpc, then config
+        let resolved = rpc.or_else(|| cfg.as_ref().and_then(|c| c.rpc_url.clone()));
+        resolved
+    };
+
+    let mut entries = Vec::new();
+    for account in accounts {
+        let chain_names: Vec<String> = account
+            .chains
+            .iter()
+            .map(|c| {
+                query::chain_name(c.chain_id)
+                    .unwrap_or("Unknown")
+                    .to_string()
+            })
+            .collect();
+
+        let eth_balance = if no_balance {
+            None
+        } else {
+            // Try account's first chain RPC, or the provided RPC
+            let url_str = rpc_url
+                .as_deref()
+                .or_else(|| account.chains.first().map(|c| c.rpc_url.as_str()));
+            match url_str {
+                Some(u) => {
+                    if let Ok(url) = u.parse::<url::Url>() {
+                        let provider = ProviderBuilder::new().connect_http(url);
+                        provider.get_balance(account.address).await.ok()
+                    } else {
+                        None
+                    }
+                }
+                None => None,
+            }
+        };
+
+        entries.push(WalletListEntry {
+            label: account.key_label.clone(),
+            address: account.address,
+            chains: chain_names,
+            eth_balance,
+        });
+    }
+
+    let fmt = format.unwrap_or_else(|| "table".to_string());
+    let output = match fmt.as_str() {
+        "json" => query::format_wallet_list_json(&entries),
+        "csv" => query::format_wallet_list_csv(&entries),
+        _ => query::format_wallet_list_table(&entries, !no_truncate),
+    };
+    print!("{output}");
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// wallet-info
+// ---------------------------------------------------------------------------
+
+async fn run_wallet_info(
+    key: String,
+    rpc: Option<String>,
+    format: Option<String>,
+    cfg: &Option<config::Config>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    use alloy::providers::{Provider, ProviderBuilder};
+    use keypo_wallet::query;
+
+    let state = StateStore::open()?;
+    let account = state
+        .find_accounts_for_key(&key)
+        .ok_or_else(|| format!("no account found for key '{key}'"))?
+        .clone();
+
+    // Fetch ETH balance per chain
+    let mut balances: Vec<(u64, U256)> = Vec::new();
+    for chain in &account.chains {
+        let url_str = rpc.as_deref().unwrap_or(&chain.rpc_url);
+        if let Ok(url) = url_str.parse::<url::Url>() {
+            let provider = ProviderBuilder::new().connect_http(url);
+            if let Ok(balance) = provider.get_balance(account.address).await {
+                balances.push((chain.chain_id, balance));
+            }
+        }
+    }
+
+    let _ = cfg; // config used for RPC resolution above
+
+    let fmt = format.unwrap_or_else(|| "table".to_string());
+    let output = match fmt.as_str() {
+        "json" => query::format_wallet_info_json(&account, &balances),
+        _ => query::format_wallet_info(&account, &balances),
+    };
+    print!("{output}");
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
 
 fn load_deployments_impl() -> KeypoAccountImpl {
     // Try CARGO_MANIFEST_DIR (works for cargo run), fall back to relative path
@@ -937,5 +1515,256 @@ mod tests {
     fn long_about_present() {
         use clap::CommandFactory;
         assert!(Cli::command().get_long_about().is_some());
+    }
+
+    // -- Phase B: New command arg parsing tests --
+
+    #[test]
+    fn init_args_parse() {
+        let cli = Cli::try_parse_from(["keypo-wallet", "init"]).unwrap();
+        assert!(matches!(cli.command, Commands::Init { .. }));
+    }
+
+    #[test]
+    fn init_args_non_interactive() {
+        let cli = Cli::try_parse_from([
+            "keypo-wallet",
+            "init",
+            "--rpc",
+            "https://rpc.example.com",
+            "--bundler",
+            "https://bundler.example.com",
+            "--paymaster",
+            "https://pm.example.com",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Init {
+                rpc,
+                bundler,
+                paymaster,
+            } => {
+                assert_eq!(rpc, Some("https://rpc.example.com".into()));
+                assert_eq!(bundler, Some("https://bundler.example.com".into()));
+                assert_eq!(paymaster, Some("https://pm.example.com".into()));
+            }
+            _ => panic!("expected Init"),
+        }
+    }
+
+    #[test]
+    fn config_set_args_parse() {
+        let cli = Cli::try_parse_from([
+            "keypo-wallet",
+            "config",
+            "set",
+            "network.rpc_url",
+            "https://rpc.example.com",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Config(ConfigAction::Set { key, value }) => {
+                assert_eq!(key, "network.rpc_url");
+                assert_eq!(value, "https://rpc.example.com");
+            }
+            _ => panic!("expected Config Set"),
+        }
+    }
+
+    #[test]
+    fn config_show_args_parse() {
+        let cli = Cli::try_parse_from(["keypo-wallet", "config", "show", "--reveal"]).unwrap();
+        match cli.command {
+            Commands::Config(ConfigAction::Show { reveal }) => {
+                assert!(reveal);
+            }
+            _ => panic!("expected Config Show"),
+        }
+    }
+
+    #[test]
+    fn config_edit_args_parse() {
+        let cli = Cli::try_parse_from(["keypo-wallet", "config", "edit"]).unwrap();
+        assert!(matches!(cli.command, Commands::Config(ConfigAction::Edit)));
+    }
+
+    #[test]
+    fn create_args_parse() {
+        let cli = Cli::try_parse_from([
+            "keypo-wallet",
+            "create",
+            "--label",
+            "my-key",
+            "--policy",
+            "open",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Create { label, policy } => {
+                assert_eq!(label, "my-key");
+                assert_eq!(policy, "open");
+            }
+            _ => panic!("expected Create"),
+        }
+    }
+
+    #[test]
+    fn list_args_parse() {
+        let cli = Cli::try_parse_from(["keypo-wallet", "list", "--format", "json"]).unwrap();
+        match cli.command {
+            Commands::List { format } => {
+                assert_eq!(format, Some("json".into()));
+            }
+            _ => panic!("expected List"),
+        }
+    }
+
+    #[test]
+    fn key_info_args_parse() {
+        let cli = Cli::try_parse_from(["keypo-wallet", "key-info", "my-key", "--format", "json"])
+            .unwrap();
+        match cli.command {
+            Commands::KeyInfo { label, format } => {
+                assert_eq!(label, "my-key");
+                assert_eq!(format, Some("json".into()));
+            }
+            _ => panic!("expected KeyInfo"),
+        }
+    }
+
+    #[test]
+    fn sign_args_parse() {
+        let cli = Cli::try_parse_from([
+            "keypo-wallet",
+            "sign",
+            "0xabcd",
+            "--key",
+            "my-key",
+            "--format",
+            "raw",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Sign {
+                digest,
+                key,
+                format,
+            } => {
+                assert_eq!(digest, "0xabcd");
+                assert_eq!(key, "my-key");
+                assert_eq!(format, Some("raw".into()));
+            }
+            _ => panic!("expected Sign"),
+        }
+    }
+
+    #[test]
+    fn delete_args_parse() {
+        let cli = Cli::try_parse_from(["keypo-wallet", "delete", "--label", "my-key", "--confirm"])
+            .unwrap();
+        match cli.command {
+            Commands::Delete { label, confirm } => {
+                assert_eq!(label, "my-key");
+                assert!(confirm);
+            }
+            _ => panic!("expected Delete"),
+        }
+    }
+
+    #[test]
+    fn wallet_list_args_parse() {
+        let cli = Cli::try_parse_from([
+            "keypo-wallet",
+            "wallet-list",
+            "--format",
+            "json",
+            "--no-truncate",
+            "--no-balance",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::WalletList {
+                format,
+                no_truncate,
+                no_balance,
+                ..
+            } => {
+                assert_eq!(format, Some("json".into()));
+                assert!(no_truncate);
+                assert!(no_balance);
+            }
+            _ => panic!("expected WalletList"),
+        }
+    }
+
+    #[test]
+    fn wallet_list_no_balance_flag() {
+        let cli = Cli::try_parse_from(["keypo-wallet", "wallet-list", "--no-balance"]).unwrap();
+        match cli.command {
+            Commands::WalletList { no_balance, .. } => {
+                assert!(no_balance);
+            }
+            _ => panic!("expected WalletList"),
+        }
+    }
+
+    #[test]
+    fn wallet_info_args_parse() {
+        let cli = Cli::try_parse_from([
+            "keypo-wallet",
+            "wallet-info",
+            "--key",
+            "my-key",
+            "--rpc",
+            "https://rpc.example.com",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::WalletInfo { key, rpc, .. } => {
+                assert_eq!(key, "my-key");
+                assert_eq!(rpc, Some("https://rpc.example.com".into()));
+            }
+            _ => panic!("expected WalletInfo"),
+        }
+    }
+
+    #[test]
+    fn send_no_paymaster_flag() {
+        let cli = Cli::try_parse_from([
+            "keypo-wallet",
+            "send",
+            "--key",
+            "my-key",
+            "--to",
+            "0xdead",
+            "--no-paymaster",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Send { no_paymaster, .. } => {
+                assert!(no_paymaster);
+            }
+            _ => panic!("expected Send"),
+        }
+    }
+
+    #[test]
+    fn batch_no_paymaster_flag() {
+        let cli = Cli::try_parse_from([
+            "keypo-wallet",
+            "batch",
+            "--key",
+            "my-key",
+            "--calls",
+            "calls.json",
+            "--no-paymaster",
+        ])
+        .unwrap();
+        match cli.command {
+            Commands::Batch { no_paymaster, .. } => {
+                assert!(no_paymaster);
+            }
+            _ => panic!("expected Batch"),
+        }
     }
 }

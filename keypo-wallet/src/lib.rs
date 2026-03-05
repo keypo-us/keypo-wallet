@@ -1,5 +1,6 @@
 pub mod account;
 pub mod bundler;
+pub mod config;
 pub mod error;
 pub mod impls;
 pub mod paymaster;

@@ -77,6 +77,7 @@ fn state_store_full_lifecycle() {
         paymaster_url: None,
         rpc_url: "https://sepolia.base.org".into(),
         deployed_at: "2026-03-01T00:00:00Z".into(),
+        tx_hash: None,
     };
     store
         .add_chain_deployment("test-key", "biometric", addr, pubkey.clone(), deployment1)
@@ -92,6 +93,7 @@ fn state_store_full_lifecycle() {
         paymaster_url: Some("https://paymaster.example.com".into()),
         rpc_url: "https://eth.example.com".into(),
         deployed_at: "2026-03-02T00:00:00Z".into(),
+        tx_hash: None,
     };
     store
         .add_chain_deployment("test-key", "biometric", addr, pubkey, deployment2)

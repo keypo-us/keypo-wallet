@@ -277,8 +277,15 @@ pub async fn setup(
     tracing::info!("Ephemeral EOA: {eoa_addr}");
 
     // 8. Wait for funding
+    if matches!(funding, FundingStrategy::WaitForFunding { .. }) {
+        println!("Send ~0.001 ETH to fund setup: {eoa_addr}");
+        println!("Waiting for funding...");
+    }
     tracing::info!("Waiting for funding...");
     let balance = wait_for_funding(&provider, eoa_addr, &funding).await?;
+    if matches!(funding, FundingStrategy::WaitForFunding { .. }) {
+        println!("Funded!");
+    }
     tracing::info!("Funded: {balance} wei");
 
     // 9. Get authorization nonce
@@ -369,6 +376,7 @@ pub async fn setup(
         paymaster_url: config.paymaster_url.clone(),
         rpc_url: config.rpc_url.clone(),
         deployed_at: chrono::Utc::now().to_rfc3339(),
+        tx_hash: Some(format!("{:#x}", tx_hash)),
     };
     state.add_chain_deployment(
         &config.key_label,
@@ -499,6 +507,7 @@ mod tests {
             paymaster_url: None,
             rpc_url: "https://sepolia.base.org".into(),
             deployed_at: "2026-03-01T00:00:00Z".into(),
+            tx_hash: None,
         };
         state
             .add_chain_deployment("test-key", "open", addr, pk, deployment)

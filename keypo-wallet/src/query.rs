@@ -7,7 +7,7 @@ use alloy::sol_types::{SolCall, SolValue};
 use serde::Serialize;
 
 use crate::error::{Error, Result};
-use crate::types::{AccountRecord, BalanceQuery, ChainDeployment, TokenBalance};
+use crate::types::{AccountRecord, BalanceQuery, ChainDeployment, TokenBalance, WalletListEntry};
 
 // ---------------------------------------------------------------------------
 // Static chain name lookup
@@ -435,6 +435,215 @@ pub fn format_balance_csv(account: &AccountRecord, balances: &[TokenBalance]) ->
 }
 
 // ---------------------------------------------------------------------------
+// wallet-list formatting
+// ---------------------------------------------------------------------------
+
+pub fn format_wallet_list_table(entries: &[WalletListEntry], truncate: bool) -> String {
+    let mut out = String::new();
+    if entries.is_empty() {
+        out.push_str("No wallets found. Run 'keypo-wallet setup' to create one.\n");
+        return out;
+    }
+
+    // Header
+    let addr_header = "Address";
+    let addr_width = if truncate { 13 } else { 42 }; // 0x...1234 vs full address
+
+    out.push_str(&format!(
+        "{:<12} {:<width$} {:<20} {}\n",
+        "Label",
+        addr_header,
+        "Chains",
+        "ETH Balance",
+        width = addr_width
+    ));
+    out.push_str(&format!(
+        "{:<12} {:<width$} {:<20} {}\n",
+        "-----",
+        "-------",
+        "------",
+        "-----------",
+        width = addr_width
+    ));
+
+    for entry in entries {
+        let addr_str = if truncate {
+            short_address(entry.address)
+        } else {
+            format!("{}", entry.address)
+        };
+        let chains_str = entry.chains.join(", ");
+        let balance_str = match entry.eth_balance {
+            Some(b) => format_balance(b, 18),
+            None => "(no RPC)".to_string(),
+        };
+        out.push_str(&format!(
+            "{:<12} {:<width$} {:<20} {}\n",
+            entry.label,
+            addr_str,
+            chains_str,
+            balance_str,
+            width = addr_width
+        ));
+    }
+
+    out
+}
+
+pub fn format_wallet_list_json(entries: &[WalletListEntry]) -> String {
+    #[derive(Serialize)]
+    struct WalletListOutput {
+        wallets: Vec<WalletJsonEntry>,
+    }
+    #[derive(Serialize)]
+    struct WalletJsonEntry {
+        label: String,
+        address: String,
+        chains: Vec<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        eth_balance: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        eth_balance_raw: Option<String>,
+    }
+
+    let wallets: Vec<WalletJsonEntry> = entries
+        .iter()
+        .map(|e| WalletJsonEntry {
+            label: e.label.clone(),
+            address: format!("{}", e.address),
+            chains: e.chains.clone(),
+            eth_balance: e.eth_balance.map(|b| format_balance(b, 18)),
+            eth_balance_raw: e.eth_balance.map(|b| b.to_string()),
+        })
+        .collect();
+
+    serde_json::to_string_pretty(&WalletListOutput { wallets }).unwrap_or_default()
+}
+
+pub fn format_wallet_list_csv(entries: &[WalletListEntry]) -> String {
+    let mut out = String::from("label,address,chains,eth_balance,eth_balance_raw\n");
+    for e in entries {
+        let chains = e.chains.join("; ");
+        let balance = e
+            .eth_balance
+            .map(|b| format_balance(b, 18))
+            .unwrap_or_default();
+        let raw = e.eth_balance.map(|b| b.to_string()).unwrap_or_default();
+        out.push_str(&format!(
+            "\"{}\",\"{}\",\"{}\",\"{}\",\"{}\"\n",
+            e.label, e.address, chains, balance, raw
+        ));
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// wallet-info formatting
+// ---------------------------------------------------------------------------
+
+pub fn format_wallet_info(account: &AccountRecord, balances: &[(u64, U256)]) -> String {
+    let mut out = String::new();
+    out.push_str(&format!("Wallet: {}\n", account.key_label));
+    out.push_str(&format!("Address: {}\n", account.address));
+    out.push_str(&format!("Policy: {}\n", account.key_policy));
+    out.push_str("Status: active\n");
+    out.push_str(&format!(
+        "Public Key:\n  x: {}\n  y: {}\n",
+        account.public_key.qx, account.public_key.qy
+    ));
+
+    out.push_str("\nChain Deployments:\n");
+    for chain in &account.chains {
+        out.push_str(&format!("  {}:\n", display_chain(chain.chain_id)));
+        out.push_str(&format!(
+            "    Impl:      {} @ {}\n",
+            chain.implementation_name, chain.implementation
+        ));
+        out.push_str(&format!("    Deployed:  {}\n", chain.deployed_at));
+        if let Some(ref tx) = chain.tx_hash {
+            out.push_str(&format!("    Tx hash:   {}\n", tx));
+        }
+        // Show balance for this chain if available
+        if let Some((_, balance)) = balances.iter().find(|(cid, _)| *cid == chain.chain_id) {
+            out.push_str(&format!(
+                "    ETH:       {}\n",
+                format_balance(*balance, 18)
+            ));
+        }
+    }
+
+    out
+}
+
+pub fn format_wallet_info_json(account: &AccountRecord, balances: &[(u64, U256)]) -> String {
+    #[derive(Serialize)]
+    struct WalletInfoOutput {
+        label: String,
+        address: String,
+        policy: String,
+        status: String,
+        public_key: PublicKeyOutput,
+        chains: Vec<ChainInfoEntry>,
+        created_at: String,
+    }
+    #[derive(Serialize)]
+    struct PublicKeyOutput {
+        x: String,
+        y: String,
+    }
+    #[derive(Serialize)]
+    struct ChainInfoEntry {
+        chain_id: u64,
+        chain: String,
+        implementation: String,
+        implementation_name: String,
+        deployed_at: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        tx_hash: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        eth_balance: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        eth_balance_raw: Option<String>,
+    }
+
+    let chains: Vec<ChainInfoEntry> = account
+        .chains
+        .iter()
+        .map(|c| {
+            let bal = balances
+                .iter()
+                .find(|(cid, _)| *cid == c.chain_id)
+                .map(|(_, b)| *b);
+            ChainInfoEntry {
+                chain_id: c.chain_id,
+                chain: chain_name(c.chain_id).unwrap_or("Unknown").to_string(),
+                implementation: format!("{}", c.implementation),
+                implementation_name: c.implementation_name.clone(),
+                deployed_at: c.deployed_at.clone(),
+                tx_hash: c.tx_hash.clone(),
+                eth_balance: bal.map(|b| format_balance(b, 18)),
+                eth_balance_raw: bal.map(|b| b.to_string()),
+            }
+        })
+        .collect();
+
+    let output = WalletInfoOutput {
+        label: account.key_label.clone(),
+        address: format!("{}", account.address),
+        policy: account.key_policy.clone(),
+        status: "active".to_string(),
+        public_key: PublicKeyOutput {
+            x: format!("{}", account.public_key.qx),
+            y: format!("{}", account.public_key.qy),
+        },
+        chains,
+        created_at: account.created_at.clone(),
+    };
+
+    serde_json::to_string_pretty(&output).unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
 // RPC query functions
 // ---------------------------------------------------------------------------
 
@@ -547,6 +756,7 @@ mod tests {
                     paymaster_url: None,
                     rpc_url: "https://sepolia.base.org".into(),
                     deployed_at: "2026-03-01T12:00:00Z".into(),
+                    tx_hash: None,
                 },
                 ChainDeployment {
                     chain_id: 1,
@@ -557,6 +767,7 @@ mod tests {
                     paymaster_url: None,
                     rpc_url: "https://eth.example.com".into(),
                     deployed_at: "2026-03-02T12:00:00Z".into(),
+                    tx_hash: None,
                 },
             ],
             created_at: "2026-03-01T00:00:00Z".into(),
@@ -956,5 +1167,127 @@ mod tests {
             lines[1],
             "84532,\"Base Sepolia\",\"ETH\",\"0.008900\",\"8900000000000000\""
         );
+    }
+
+    // -- wallet-list formatting --
+
+    fn test_wallet_entries() -> Vec<WalletListEntry> {
+        vec![WalletListEntry {
+            label: "my-key".into(),
+            address: address!("0x9876543210987654321098765432109876545432"),
+            chains: vec!["Base Sepolia".into()],
+            eth_balance: Some(U256::from(1_000_000_000_000_000_000u64)),
+        }]
+    }
+
+    #[test]
+    fn test_format_wallet_list_table_basic() {
+        let entries = test_wallet_entries();
+        let table = format_wallet_list_table(&entries, true);
+        assert!(table.contains("my-key"));
+        assert!(table.contains("0x9876...5432"));
+        assert!(table.contains("Base Sepolia"));
+        assert!(table.contains("1.000000"));
+    }
+
+    #[test]
+    fn test_format_wallet_list_table_no_truncate() {
+        let entries = test_wallet_entries();
+        let table = format_wallet_list_table(&entries, false);
+        assert!(table.contains("0x9876543210987654321098765432109876545432"));
+        assert!(!table.contains("..."));
+    }
+
+    #[test]
+    fn test_format_wallet_list_table_no_balance() {
+        let entries = vec![WalletListEntry {
+            label: "my-key".into(),
+            address: address!("0x9876543210987654321098765432109876545432"),
+            chains: vec!["Base Sepolia".into()],
+            eth_balance: None,
+        }];
+        let table = format_wallet_list_table(&entries, true);
+        assert!(table.contains("(no RPC)"));
+    }
+
+    #[test]
+    fn test_format_wallet_list_table_empty() {
+        let table = format_wallet_list_table(&[], true);
+        assert!(table.contains("No wallets found"));
+    }
+
+    #[test]
+    fn test_format_wallet_list_json_structure() {
+        let entries = test_wallet_entries();
+        let json_str = format_wallet_list_json(&entries);
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        let wallet = &parsed["wallets"][0];
+        assert_eq!(wallet["label"], "my-key");
+        assert!(wallet["address"].as_str().unwrap().starts_with("0x"));
+        assert_eq!(wallet["chains"][0], "Base Sepolia");
+        assert_eq!(wallet["eth_balance"], "1.000000");
+    }
+
+    #[test]
+    fn test_format_wallet_list_csv_structure() {
+        let entries = test_wallet_entries();
+        let csv = format_wallet_list_csv(&entries);
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines[0], "label,address,chains,eth_balance,eth_balance_raw");
+        assert!(lines[1].contains("my-key"));
+        assert!(lines[1].contains("Base Sepolia"));
+    }
+
+    // -- wallet-info formatting --
+
+    #[test]
+    fn test_format_wallet_info_basic() {
+        let account = test_account();
+        let balances = vec![(84532, U256::from(500_000_000_000_000_000u64))];
+        let info = format_wallet_info(&account, &balances);
+        assert!(info.contains("Wallet: testnet-key"));
+        assert!(info.contains("Address: 0x9876543210987654321098765432109876545432"));
+        assert!(info.contains("Policy: biometric"));
+        assert!(info.contains("Status: active"));
+        assert!(info.contains("Public Key:"));
+        assert!(info.contains("Base Sepolia (84532):"));
+        assert!(info.contains("0.500000"));
+    }
+
+    #[test]
+    fn test_format_wallet_info_json_structure() {
+        let account = test_account();
+        let balances = vec![(84532, U256::from(1_000_000_000_000_000_000u64))];
+        let json_str = format_wallet_info_json(&account, &balances);
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed["label"], "testnet-key");
+        assert_eq!(parsed["policy"], "biometric");
+        assert_eq!(parsed["status"], "active");
+        assert!(parsed["public_key"]["x"].as_str().is_some());
+        assert!(parsed["public_key"]["y"].as_str().is_some());
+        let chain = &parsed["chains"][0];
+        assert_eq!(chain["chain_id"], 84532);
+        assert_eq!(chain["eth_balance"], "1.000000");
+    }
+
+    #[test]
+    fn test_format_wallet_info_with_balances() {
+        let account = test_account();
+        let balances = vec![
+            (84532, U256::from(500_000_000_000_000_000u64)),
+            (1, U256::from(2_000_000_000_000_000_000u64)),
+        ];
+        let info = format_wallet_info(&account, &balances);
+        assert!(info.contains("0.500000"));
+        assert!(info.contains("2.000000"));
+    }
+
+    #[test]
+    fn test_format_wallet_info_multiple_chains() {
+        let account = test_account();
+        let balances = vec![];
+        let info = format_wallet_info(&account, &balances);
+        assert!(info.contains("Base Sepolia (84532):"));
+        assert!(info.contains("Ethereum (1):"));
     }
 }

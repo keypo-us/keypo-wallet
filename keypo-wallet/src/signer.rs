@@ -73,6 +73,32 @@ impl KeypoSigner {
         }
     }
 
+    /// Returns the binary name/path.
+    pub fn binary(&self) -> &str {
+        &self.binary
+    }
+
+    /// Runs a keypo-signer command with inherited I/O (stdout/stderr go directly to terminal).
+    /// Args are forwarded verbatim — no `--format json` injection.
+    /// Returns Ok(()) on exit code 0, Err on non-zero or spawn failure.
+    pub fn run_raw(&self, args: &[&str]) -> Result<()> {
+        let status = std::process::Command::new(&self.binary)
+            .args(args)
+            .status()
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    Error::SignerNotFound(self.binary.clone())
+                } else {
+                    Error::SignerCommand(format!("failed to run {}: {}", self.binary, e))
+                }
+            })?;
+        if !status.success() {
+            // stderr already printed to terminal by the child process
+            std::process::exit(status.code().unwrap_or(1));
+        }
+        Ok(())
+    }
+
     /// Runs a keypo-signer command and returns parsed JSON output.
     fn run_command(&self, args: &[&str]) -> Result<serde_json::Value> {
         let output = std::process::Command::new(&self.binary)

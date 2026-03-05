@@ -58,6 +58,12 @@ pub enum Error {
     #[error("receipt timeout: waited {0}s for UserOp {1}")]
     ReceiptTimeout(u64, String),
 
+    #[error("config file malformed: {0}")]
+    ConfigParse(String),
+
+    #[error("missing required config: {0}")]
+    ConfigMissing(String),
+
     #[error("{0}")]
     Other(String),
 }
@@ -99,6 +105,10 @@ impl Error {
                 "This key already has an account on this chain. Use 'keypo-wallet info' to see it.",
             ),
             Error::MultiChainNotSupported(_) => Some("Multi-chain setup is not yet supported."),
+            Error::ConfigParse(_) => Some("Run 'keypo-wallet config edit' to fix the config file."),
+            Error::ConfigMissing(_) => Some(
+                "Run 'keypo-wallet init' to create a config file, or pass the value as a flag.",
+            ),
             _ => None,
         }
     }
@@ -130,5 +140,19 @@ mod tests {
     fn suggestion_none_for_other() {
         let err = Error::Other("something".into());
         assert!(err.suggestion().is_none());
+    }
+
+    #[test]
+    fn config_parse_error_suggestion() {
+        let err = Error::ConfigParse("invalid TOML".into());
+        assert!(err.suggestion().unwrap().contains("config edit"));
+    }
+
+    #[test]
+    fn config_missing_suggestion() {
+        let err = Error::ConfigMissing("rpc_url".into());
+        let hint = err.suggestion().unwrap();
+        assert!(hint.contains("init"));
+        assert!(hint.contains("flag"));
     }
 }

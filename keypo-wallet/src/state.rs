@@ -170,6 +170,7 @@ mod tests {
             paymaster_url: None,
             rpc_url: "https://sepolia.base.org".into(),
             deployed_at: "2026-03-01T00:00:00Z".into(),
+            tx_hash: None,
         }
     }
 
