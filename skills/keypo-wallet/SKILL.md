@@ -10,7 +10,7 @@ metadata:
 
 # keypo-wallet
 
-A CLI that turns your Mac into a programmable hardware wallet. Private keys are P-256 keys stored in the Apple Secure Enclave — they never leave the hardware, and Apple cannot extract them. The wallet uses EIP-7702 smart account delegation with ERC-4337 account abstraction for transaction submission.
+A CLI that turns your Mac into a programmable hardware wallet. Private keys are P-256 keys (passkeys) stored in the Apple Secure Enclave — they never leave the hardware, and Apple cannot extract them. The wallet uses EIP-7702 smart account delegation with ERC-4337 account abstraction for transaction submission.
 
 **Install:** `brew install keypo-us/tap/keypo-wallet`
 This installs both `keypo-wallet` (Rust CLI) and `keypo-signer` (Swift CLI for Secure Enclave operations).
