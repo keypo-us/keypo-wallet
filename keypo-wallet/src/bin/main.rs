@@ -33,7 +33,24 @@ enum Commands {
     /// Initialize config file
     #[command(
         long_about = "Initialize ~/.keypo/config.toml with RPC and bundler URLs.\n\n\
-            Prompts interactively for URLs, or use --rpc/--bundler flags for non-interactive mode."
+            Prompts interactively for URLs, or use --rpc/--bundler flags for non-interactive mode.",
+        after_long_help = "\
+EXAMPLES:
+  # Interactive (prompts for each URL):
+  keypo-wallet init
+
+  # Non-interactive:
+  keypo-wallet init --rpc https://sepolia.base.org --bundler https://api.pimlico.io/v2/84532/rpc?apikey=KEY
+
+  # With optional paymaster:
+  keypo-wallet init --rpc https://sepolia.base.org --bundler https://bundler.url --paymaster https://pm.url
+
+OUTPUT:
+  Config saved to ~/.keypo/config.toml
+
+CONFIG RESOLUTION (all commands):
+  CLI flag > env var > config file > error
+  Env vars: KEYPO_RPC_URL, KEYPO_BUNDLER_URL, KEYPO_PAYMASTER_URL, KEYPO_PAYMASTER_POLICY_ID"
     )]
     Init {
         /// RPC URL (skip interactive prompt)
@@ -57,9 +74,25 @@ enum Commands {
     Config(ConfigAction),
 
     /// Set up a smart account on a chain
-    #[command(long_about = "Set up a smart account on a chain.\n\n\
+    #[command(
+        long_about = "Set up a smart account on a chain.\n\n\
             Signs an EIP-7702 delegation to the KeypoAccount implementation, then sends an \
-            initialization transaction to register the P-256 public key as the account owner.")]
+            initialization transaction to register the P-256 public key as the account owner.",
+        after_long_help = "\
+EXAMPLES:
+  keypo-wallet setup --key my-wallet --key-policy biometric
+  keypo-wallet setup --key bot-wallet --key-policy open --rpc https://sepolia.base.org
+
+OUTPUT:
+  Address:  0x1234...abcd
+  Tx hash:  0xabcd...1234
+  Chain ID: 84532
+
+NOTES:
+  - Requires ETH for gas. The CLI prints the address and waits for you to fund it (~$1).
+  - If TEST_FUNDER_PRIVATE_KEY is set, the CLI auto-funds the account.
+  - Key policies: open, passcode, biometric."
+    )]
     Setup {
         /// Key label for the signing key
         #[arg(long)]
@@ -95,9 +128,31 @@ enum Commands {
     },
 
     /// Send a transaction
-    #[command(long_about = "Send a transaction via the ERC-4337 bundler.\n\n\
+    #[command(
+        long_about = "Send a transaction via the ERC-4337 bundler.\n\n\
             Builds a UserOp, signs it with the P-256 key via keypo-signer, and submits it \
-            to the bundler. Use --paymaster for gas sponsorship.")]
+            to the bundler. Use --paymaster for gas sponsorship.",
+        after_long_help = "\
+EXAMPLES:
+  # Send 0.001 ETH:
+  keypo-wallet send --key my-wallet --to 0xRecipient --value 1000000000000000
+
+  # Contract call with hex data:
+  keypo-wallet send --key my-wallet --to 0xContract --data 0xa9059cbb000...
+
+  # Pay gas from wallet (skip paymaster):
+  keypo-wallet send --key my-wallet --to 0xRecipient --value 0 --no-paymaster
+
+OUTPUT:
+  UserOp hash: 0xabcd...1234
+  Tx hash:     0xabcd...5678
+  Success:     true
+
+VALUE FORMATS:
+  --value: decimal wei (e.g. 1000000000000000 = 0.001 ETH)
+  --data:  0x-prefixed hex calldata
+  --to:    0x-prefixed 20-byte address"
+    )]
     Send {
         /// Key label for the signing key
         #[arg(long)]
@@ -141,9 +196,27 @@ enum Commands {
     },
 
     /// Send a batch of calls
-    #[command(long_about = "Send a batch of calls in a single UserOp.\n\n\
+    #[command(
+        long_about = "Send a batch of calls in a single UserOp.\n\n\
             Reads a JSON file containing an array of {to, value, data} objects and executes \
-            them atomically via ERC-7821 batch mode. Pass '--calls -' to read from stdin.")]
+            them atomically via ERC-7821 batch mode. Pass '--calls -' to read from stdin.",
+        after_long_help = "\
+EXAMPLES:
+  # From file:
+  keypo-wallet batch --key my-wallet --calls batch.json
+
+  # From stdin:
+  cat batch.json | keypo-wallet batch --key my-wallet --calls -
+
+CALLS JSON SCHEMA:
+  [{\"to\": \"0xAddr\", \"value\": \"0x0\", \"data\": \"0x\"}]
+  Values are 0x-prefixed hex (e.g. \"0x38d7ea4c68000\" = 0.001 ETH).
+
+OUTPUT:
+  UserOp hash: 0xabcd...1234
+  Tx hash:     0xabcd...5678
+  Success:     true"
+    )]
     Batch {
         /// Key label for the signing key
         #[arg(long)]
@@ -179,9 +252,21 @@ enum Commands {
     },
 
     /// Show account info
-    #[command(long_about = "Show account info from local state (no RPC calls).\n\n\
+    #[command(
+        long_about = "Show account info from local state (no RPC calls).\n\n\
             Displays the account address, key label, and chain deployments stored in \
-            ~/.keypo/accounts.json.")]
+            ~/.keypo/accounts.json.",
+        after_long_help = "\
+EXAMPLES:
+  keypo-wallet info --key my-wallet
+
+OUTPUT:
+  Label:   my-wallet
+  Address: 0x1234...abcd
+  Chains:  84532
+
+NOTE: This reads local state only (no RPC). Use 'wallet-info' for live on-chain data."
+    )]
     Info {
         /// Key label for the signing key
         #[arg(long)]
@@ -196,7 +281,24 @@ enum Commands {
     #[command(
         long_about = "Check account balance for native ETH and ERC-20 tokens.\n\n\
             Supports --token for specific ERC-20 contract addresses, --query for JSON \
-            query files, and --format for table/json/csv output."
+            query files, and --format for table/json/csv output.",
+        after_long_help = "\
+EXAMPLES:
+  keypo-wallet balance --key my-wallet
+  keypo-wallet balance --key my-wallet --token 0xUSDC_ADDRESS
+  keypo-wallet balance --key my-wallet --query balances.json --format json
+  keypo-wallet balance --key my-wallet --format csv
+
+TABLE OUTPUT:
+  Chain    Token  Balance
+  84532    ETH    0.042000000000000000
+
+JSON OUTPUT:
+  {\"account\": \"0x1234...abcd\", \"balances\": [{\"chain_id\": 84532, \"token\": \"ETH\", \"balance\": \"0.042\", \"raw\": \"42000000000000000\"}]}
+
+CSV OUTPUT:
+  chain_id,token,balance,raw_balance
+  84532,ETH,0.042000000000000000,42000000000000000"
     )]
     Balance {
         /// Key label for the signing key
@@ -227,7 +329,16 @@ enum Commands {
     // -- Signer passthrough commands --
     /// Create a new signing key
     #[command(
-        long_about = "Create a new P-256 signing key in the Secure Enclave via keypo-signer."
+        long_about = "Create a new P-256 signing key in the Secure Enclave via keypo-signer.",
+        after_long_help = "\
+EXAMPLES:
+  keypo-wallet create --label my-key --policy biometric
+  keypo-wallet create --label bot-key --policy open
+
+OUTPUT (JSON from keypo-signer):
+  {\"label\": \"my-key\", \"policy\": \"biometric\", \"publicKey\": {\"x\": \"0x...\", \"y\": \"0x...\"}}
+
+POLICIES: open, passcode, biometric"
     )]
     Create {
         /// Key label
@@ -262,7 +373,18 @@ enum Commands {
     },
 
     /// Sign a digest
-    #[command(long_about = "Sign a 32-byte hex digest with a P-256 key via keypo-signer.")]
+    #[command(
+        long_about = "Sign a 32-byte hex digest with a P-256 key via keypo-signer.",
+        after_long_help = "\
+EXAMPLES:
+  keypo-wallet sign 0x$(openssl rand -hex 32) --key my-key
+  keypo-wallet sign 0xabcd...1234 --key my-key --format json
+
+NOTE: Digest must be 0x-prefixed, exactly 32 bytes (64 hex chars).
+
+OUTPUT (JSON):
+  {\"r\": \"0x...\", \"s\": \"0x...\"}"
+    )]
     Sign {
         /// Hex-encoded 32-byte digest
         digest: String,
@@ -277,7 +399,15 @@ enum Commands {
     },
 
     /// Verify a signature
-    #[command(long_about = "Verify a P-256 signature against a digest and key.")]
+    #[command(
+        long_about = "Verify a P-256 signature against a digest and key.",
+        after_long_help = "\
+EXAMPLES:
+  keypo-wallet verify 0xDIGEST --key my-key --r 0xR_VALUE --s 0xS_VALUE
+
+OUTPUT (JSON):
+  {\"valid\": true}"
+    )]
     Verify {
         /// Hex-encoded 32-byte digest
         digest: String,
@@ -320,7 +450,23 @@ enum Commands {
         name = "wallet-list",
         long_about = "List all smart wallet accounts with optional live balances.\n\n\
             Shows address, chains, and ETH balance for each account. Use --no-balance to \
-            skip RPC queries."
+            skip RPC queries.",
+        after_long_help = "\
+EXAMPLES:
+  keypo-wallet wallet-list
+  keypo-wallet wallet-list --no-balance
+  keypo-wallet wallet-list --format json
+  keypo-wallet wallet-list --format csv
+
+TABLE OUTPUT:
+  Label       Address                                      Chains  ETH Balance
+  my-wallet   0x1234567890abcdef1234567890abcdef12345678   84532   0.042
+
+JSON OUTPUT:
+  {\"wallets\": [{\"label\": \"my-wallet\", \"address\": \"0x1234...abcd\", \"chains\": [84532], \"eth_balance\": \"0.042\"}]}
+
+CSV HEADER:
+  label,address,chains,eth_balance,eth_balance_raw"
     )]
     WalletList {
         /// RPC URL for balance queries
@@ -340,7 +486,25 @@ enum Commands {
     #[command(
         name = "wallet-info",
         long_about = "Show detailed info for a specific wallet account, including P-256 \
-            public key coordinates and per-chain deployment details."
+            public key coordinates and per-chain deployment details.",
+        after_long_help = "\
+EXAMPLES:
+  keypo-wallet wallet-info --key my-wallet
+  keypo-wallet wallet-info --key my-wallet --format json
+
+TABLE OUTPUT:
+  Wallet:     my-wallet
+  Address:    0x1234...abcd
+  Policy:     biometric
+  Status:     deployed
+  Public Key:
+    x: 0xabc...
+    y: 0xdef...
+  Chains:
+    84532 — ETH: 0.042
+
+JSON OUTPUT:
+  {\"label\": \"my-wallet\", \"address\": \"0x...\", \"policy\": \"biometric\", \"status\": \"deployed\", \"public_key\": {\"x\": \"0x...\", \"y\": \"0x...\"}, \"chains\": [{\"chain_id\": 84532, \"eth_balance\": \"0.042\"}]}"
     )]
     WalletInfo {
         /// Key label

@@ -222,15 +222,13 @@ echo '{"accounts":[]}' > ~/.keypo/accounts.json
 cargo run -- wallet-list
 # Restore accounts, then:
 cargo run -- wallet-list
-cargo run -- wallet-list --no-truncate
 cargo run -- wallet-list --no-balance
 cargo run -- wallet-list --format json
 cargo run -- wallet-list --format csv
 ```
 
 - [ ] No accounts: prints "No wallets found" with hint
-- [ ] Table shows Label, Address (truncated), Chains, ETH Balance
-- [ ] `--no-truncate`: full 42-char addresses
+- [ ] Table shows Label, Address, Chains, ETH Balance
 - [ ] `--no-balance`: balance column shows `(no RPC)`
 - [ ] `--format json`: valid JSON with `wallets` array
 - [ ] `--format csv`: header row `label,address,chains,eth_balance,eth_balance_raw`

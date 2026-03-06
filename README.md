@@ -112,13 +112,14 @@ If `paymaster_url` is set in your config, transactions are gas-sponsored automat
 | `config set` | Set a config value (e.g. `config set network.rpc_url https://...`) |
 | `config show` | Print current config |
 | `config edit` | Open config file in `$EDITOR` |
-| **Key management** (via keypo-signer) | |
+| **Key management** (delegates to [`keypo-signer`](keypo-signer-cli/)) | |
 | `create` | Create a new P-256 signing key in the Secure Enclave |
 | `list` | List all signing keys |
 | `key-info` | Show details for a specific key |
 | `sign` | Sign a 32-byte hex digest |
 | `verify` | Verify a P-256 signature |
 | `delete` | Delete a signing key |
+| `rotate` | Rotate a signing key |
 | **Wallet operations** | |
 | `setup` | Set up a smart account — EIP-7702 delegation + P-256 key registration |
 | `send` | Send a single transaction via the ERC-4337 bundler |
