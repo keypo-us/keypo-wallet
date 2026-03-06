@@ -1,3 +1,10 @@
+---
+title: Repo Documentation Harness Spec
+owner: @serdave-eth
+last_verified: 2026-03-05
+status: current
+---
+
 # Repo Documentation Harness Spec
 
 > **Purpose:** General guidance for organizing in-repo documentation so that AI coding agents (Claude Code, Codex, etc.) can reliably navigate, understand, and contribute to the codebase. Hand this spec to Claude Code and ask it to generate an implementation plan specific to your repo.

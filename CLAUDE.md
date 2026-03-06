@@ -42,6 +42,7 @@ cd keypo-wallet && cargo test -- --ignored --test-threads=1
 | [docs/manual-testing.md](docs/manual-testing.md) | End-to-end manual testing checklist |
 | [docs/decisions/](docs/decisions/) | Architecture Decision Records (ADRs) |
 | [docs/archive/](docs/archive/) | Historical specs, roadmaps, plans |
+| [docs/documentation-spec.md](docs/documentation-spec.md) | Documentation harness spec for AI agent navigation |
 | [keypo-signer-cli/CLAUDE.md](keypo-signer-cli/CLAUDE.md) | Swift project: architecture, conventions, gotchas |
 | [keypo-signer-cli/JSON-FORMAT.md](keypo-signer-cli/JSON-FORMAT.md) | Verified JSON output schema for all signer commands |
 
