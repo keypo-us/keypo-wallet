@@ -186,7 +186,7 @@ The address is deterministic (CREATE2) and identical across all chains.
 This repo includes [Claude Code skills](https://github.com/vercel-labs/skills) that teach AI agents how to use keypo-wallet. Install all skills with:
 
 ```bash
-npx skills add keypo-skills
+npx skills add keypo-skills --full-depth
 ```
 
 | Skill | Description |
