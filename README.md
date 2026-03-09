@@ -33,7 +33,7 @@ You'll need the following set up before installing the CLI:
 - An RPC provider URL. To start you can use the Base public RPC (https://sepolia.base.org) but there are many RPC providers you can use.
 - A bundler API key/URL. Lots of options here, the most popular being CDP, Alchemy and Pimlico. We used Pimlico, but any ERC4337 bundler works.
 - A paymaster API key/URL (optional). If you want to sponsor gas you'll need to set this up. Most bundler platforms give you the paymaster with the same URL/API key.
-- A small amount of ETH (~$2) in a seperate wallet. This is needed for paying gas to deploy the wallet during the initial setup.
+- A small amount of ETH (~$1) in a seperate wallet. This is needed for paying gas to deploy the wallet during the initial setup. Since everything is on testnet for now, just grab some ETH from your favorite faucet. 
 
 ### 1. Install
 
