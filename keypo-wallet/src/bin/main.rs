@@ -1851,9 +1851,7 @@ mod tests {
         .unwrap();
         match cli.command {
             Commands::WalletList {
-                format,
-                no_balance,
-                ..
+                format, no_balance, ..
             } => {
                 assert_eq!(format, Some("json".into()));
                 assert!(no_balance);

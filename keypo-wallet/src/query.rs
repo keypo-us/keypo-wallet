@@ -1240,7 +1240,10 @@ mod tests {
         let entries = test_wallet_entries();
         let csv = format_wallet_list_csv(&entries);
         let lines: Vec<&str> = csv.lines().collect();
-        assert_eq!(lines[0], "label,policy,address,chains,eth_balance,eth_balance_raw");
+        assert_eq!(
+            lines[0],
+            "label,policy,address,chains,eth_balance,eth_balance_raw"
+        );
         assert!(lines[1].contains("my-key"));
         assert!(lines[1].contains("Base Sepolia"));
     }
