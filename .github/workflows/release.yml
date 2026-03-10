@@ -48,7 +48,7 @@ jobs:
 
       - name: Run Swift tests
         working-directory: keypo-signer-cli
-        run: swift test
+        run: swift test --filter '^(?!.*Vault(Manager|Integration)Tests)'
 
       - name: Run Rust tests
         working-directory: keypo-wallet

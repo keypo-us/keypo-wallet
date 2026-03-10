@@ -8,11 +8,6 @@ final class VaultManagerTests: XCTestCase {
     /// Tracks SE key data representations so we can clean them up in tearDown.
     private var createdKeys: [Data] = []
 
-    override func setUpWithError() throws {
-        try super.setUpWithError()
-        try XCTSkipUnless(SecureEnclave.isAvailable, "Secure Enclave not available (CI)")
-    }
-
     override func tearDown() {
         super.tearDown()
         for keyData in createdKeys {

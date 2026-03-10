@@ -28,4 +28,4 @@ jobs:
         run: swift build
 
       - name: Run tests
-        run: swift test
+        run: swift test --filter '^(?!.*Vault(Manager|Integration)Tests)'
