@@ -352,6 +352,11 @@ public class VaultManager {
 
     private func isAuthenticationCancelled(_ error: Error) -> Bool {
         let nsError = error as NSError
-        return nsError.code == -128 // errSecUserCanceled
+        // errSecUserCanceled (-128), LAError.userCancel (-2), or string match as fallback
+        if nsError.code == -128 || nsError.code == -2 {
+            return true
+        }
+        let desc = error.localizedDescription.lowercased()
+        return desc.contains("cancel")
     }
 }

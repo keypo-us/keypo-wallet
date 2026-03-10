@@ -78,7 +78,7 @@ struct VaultGetCommand: ParsableCommand {
                 writeStderr("vault integrity check failed")
                 throw ExitCode(5)
             }
-        } catch let e as VaultError where e.description.contains("cancelled") {
+        } catch VaultError.authenticationCancelled {
             writeStderr("authentication cancelled")
             throw ExitCode(4)
         } catch let e as VaultError {
@@ -96,7 +96,7 @@ struct VaultGetCommand: ParsableCommand {
                 seKeyDataRepresentation: dataRep,
                 authContext: authContext
             )
-        } catch let e as VaultError where e.description.contains("cancelled") {
+        } catch VaultError.authenticationCancelled {
             writeStderr("authentication cancelled")
             throw ExitCode(4)
         } catch {

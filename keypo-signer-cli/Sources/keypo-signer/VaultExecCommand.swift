@@ -157,7 +157,7 @@ struct VaultExecCommand: ParsableCommand {
                     writeStderr("vault integrity check failed for \(policyName)")
                     throw ExitCode(126)
                 }
-            } catch let e as VaultError where e.description.contains("cancelled") {
+            } catch VaultError.authenticationCancelled {
                 writeStderr("authentication cancelled")
                 throw ExitCode(128)
             } catch let e as VaultError {

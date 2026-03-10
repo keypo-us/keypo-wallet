@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import KeypoCore
+import LocalAuthentication
 
 struct VaultDestroyCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
@@ -37,6 +38,33 @@ struct VaultDestroyCommand: ParsableCommand {
         let manager = VaultManager()
         var totalSecrets = 0
         var destroyedVaults: [String] = []
+
+        // Verify HMAC on each vault to require authentication before destroying
+        for policyName in ["open", "passcode", "biometric"] {
+            guard let entry = vaultFile.vaults[policyName] else { continue }
+
+            guard let dataRep = Data(base64Encoded: entry.dataRepresentation) else { continue }
+
+            let authContext = LAContext()
+
+            do {
+                let integrityKey = try SignatureFormatter.parseHex(entry.integrityEphemeralPublicKey)
+                guard let expectedHMAC = Data(base64Encoded: entry.integrityHmac) else { continue }
+                let secretDataMap = try buildSecretDataMap(from: entry.secrets)
+                let _ = try manager.verifyHMAC(
+                    secrets: secretDataMap,
+                    seKeyDataRepresentation: dataRep,
+                    integrityEphemeralPublicKey: integrityKey,
+                    expectedHMAC: expectedHMAC,
+                    authContext: authContext
+                )
+            } catch VaultError.authenticationCancelled {
+                writeStderr("authentication cancelled")
+                throw ExitCode(4)
+            } catch {
+                // Integrity failure shouldn't block destroy — proceed with deletion
+            }
+        }
 
         // Delete SE keys in order: open, passcode, biometric
         for policyName in ["open", "passcode", "biometric"] {
