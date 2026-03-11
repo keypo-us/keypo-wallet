@@ -15,7 +15,7 @@ A CLI that turns your Mac into a programmable hardware wallet. Private keys are 
 **Install:** `brew install keypo-us/tap/keypo-wallet`
 This installs both `keypo-wallet` (Rust CLI) and `keypo-signer` (Swift CLI for Secure Enclave operations).
 
-**Source:** https://github.com/keypo-us/keypo-wallet
+**Source:** https://github.com/keypo-us/keypo-cli
 
 ---
 
@@ -149,9 +149,9 @@ All calls execute atomically in a single UserOperation. **Agents should always p
 
 ---
 
-## Key Management Commands
+## Key Management and Secrets
 
-These use `keypo-signer` under the hood: `create`, `list`, `key-info`, `sign`, `verify`, `delete`. Run `keypo-wallet <command> --help` for each.
+Key management (`create`, `list`, `sign`, `verify`, `delete`, `rotate`) and encrypted secret storage (`vault`) are provided by **keypo-signer**. See the `keypo-signer` skill for full documentation.
 
 **`list` shows signer keys, `wallet-list` shows wallet accounts.** A key only becomes a wallet after `setup`.
 

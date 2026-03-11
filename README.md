@@ -1,6 +1,6 @@
 # keypo-cli
 
-Hardware-bound key management and encrypted secret storage for AI agents. Powered by Mac Secure Enclave passkeys — no cloud, no custody, no extraction.
+Hardware-bound key management and encrypted secret storage for AI agents. Powered by Mac Secure Enclave and passkeys. Local-first architecture so you never rely on a cloud provider, and no one can extract your keys: not your agent and not even Apple. 
 
 ## Two CLI Tools
 
