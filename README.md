@@ -255,6 +255,20 @@ npx skills add keypo-us/keypo-cli --full-depth
 
 Generated contract skills live in `skills/contracts/`. Use the `contract-learner` skill to create new ones from any verified contract address.
 
+### Setup for vault exec
+
+After installing skills, add this to your project's `CLAUDE.md` so the agent knows to inject secrets via the vault instead of using plaintext `.env` files:
+
+```markdown
+## Secrets
+
+This project uses `keypo-signer` for secret management. Never use plaintext `.env` files. Always inject secrets via vault exec:
+
+\```bash
+keypo-signer vault exec --env .env.example -- <command>
+\```
+```
+
 ## Balance Query Files
 
 The `balance` command accepts `--query <file.json>` for structured queries:
