@@ -49,8 +49,7 @@ Shopify checkout. You get an order confirmation email from Shopify.
 └─────────────────────────────────────────────┘
 ```
 
-Everything below the dotted line happens in a child process that Claude Code
-cannot inspect. The agent sees the process's stdout (status messages like
+Claude Code cannot inspect the child process. The agent sees the process's stdout (status messages like
 "Entering card details") and its exit code — nothing else. The secret values
 exist only in the child process's environment and in the browser's memory.
 
@@ -59,20 +58,31 @@ exist only in the child process's environment and in the browser's memory.
 ### Prerequisites
 
 - **macOS** with Apple Silicon (Secure Enclave required)
-- **keypo-signer** installed and vault initialized (`keypo-signer vault list`)
-- **Node 18** (`nvm use 18`)
-- **PostgreSQL** running locally (Homebrew or Docker)
+- **[keypo-signer](https://github.com/keypo-us/keypo-wallet/tree/main/keypo-signer)** installed with vault initialized
+- **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** installed
+- **Node 18** (via [nvm](https://github.com/nvm-sh/nvm))
+- **PostgreSQL** (via Homebrew or Docker)
 
-### 1. Database
-
-Using Homebrew PostgreSQL:
+### 1. Clone the repo
 
 ```bash
+git clone --recurse-submodules https://github.com/keypo-us/keypo-wallet.git
+cd keypo-wallet/demo/sneakerbot
+```
+
+If you already have the repo, make sure the submodule is initialized:
+
+```bash
+git submodule update --init demo/sneakerbot/bot
+```
+
+### 2. Start PostgreSQL
+
+Using Homebrew:
+
+```bash
+brew install postgresql@14
 brew services start postgresql@14
-createdb sneakerbot_demo
-psql sneakerbot_demo -c "CREATE USER sneakerbot WITH PASSWORD 'localdev';"
-psql sneakerbot_demo -c "GRANT ALL ON DATABASE sneakerbot_demo TO sneakerbot;"
-psql sneakerbot_demo -c "GRANT ALL ON SCHEMA public TO sneakerbot;"
 ```
 
 Or using Docker:
@@ -81,24 +91,43 @@ Or using Docker:
 docker compose up -d
 ```
 
-### 2. Install dependencies
+### 3. Create the database
+
+```bash
+createdb sneakerbot_demo
+psql sneakerbot_demo -c "CREATE USER sneakerbot WITH PASSWORD 'localdev';"
+psql sneakerbot_demo -c "GRANT ALL ON DATABASE sneakerbot_demo TO sneakerbot;"
+psql sneakerbot_demo -c "GRANT ALL ON SCHEMA public TO sneakerbot;"
+```
+
+> If using Docker, the database is created automatically — skip this step.
+
+### 4. Install dependencies
 
 ```bash
 cd bot
+nvm install 18
 nvm use 18
 npm install
 ```
 
-### 3. Run migrations and seed data
+### 5. Run migrations and seed data
 
 ```bash
 NODE_ENV=local npx knex migrate:latest
 NODE_ENV=local npx knex seed:run
+cd ..
 ```
 
-### 4. Import your secrets to the vault
+### 6. Initialize the vault
 
-Create two temporary files with your real values:
+If you haven't already set up the Keypo vault:
+
+```bash
+keypo-signer vault init
+```
+
+Now import your secrets. Create two temporary files:
 
 **.env.open** — non-sensitive config (open tier, no auth required):
 ```
@@ -112,7 +141,7 @@ NODE_ENV=local
 STORE_PASSWORD=your-store-password
 ```
 
-**.env.card** — card secrets (biometric tier, Touch ID required):
+**.env.card** — your card details (biometric tier, Touch ID required):
 ```
 CARD_NUMBER=your-card-number
 NAME_ON_CARD=your-name
@@ -121,20 +150,27 @@ EXPIRATION_YEAR=YY
 SECURITY_CODE=your-cvv
 ```
 
-Import them:
+Import them into the vault:
 
 ```bash
 keypo-signer vault import .env.open --policy open
 keypo-signer vault import .env.card --policy biometric
 ```
 
-Then delete the files — the secrets are now in the vault:
+Delete the temporary files — your secrets are now in the vault:
 
 ```bash
 rm .env.open .env.card
 ```
 
-### 5. Lock down the code
+Verify everything is stored:
+
+```bash
+keypo-signer vault list
+# Should show 8 secrets in "open" and 5 secrets in "biometric"
+```
+
+### 7. Lock down the code
 
 This prevents the agent from modifying the checkout scripts to exfiltrate
 your card details. See [Tamper protection](#tamper-protection) for why this
@@ -145,16 +181,23 @@ sudo chown -R root:wheel run-with-vault.sh bot/
 sudo chmod -R a+rX,go-w run-with-vault.sh bot/
 ```
 
-### 6. Try it
+### 8. Try it
 
 Start the API server:
 
 ```bash
 cd bot
-NODE_ENV=local node ./scripts/start-api-server.js
+NODE_ENV=local node ./scripts/start-api-server.js &
+cd ..
 ```
 
-Then open Claude Code in the project directory and ask it to buy something:
+Open Claude Code in the project directory:
+
+```bash
+claude
+```
+
+Then ask it to buy something:
 
 ```
 > Buy the Keypo Logo Art
