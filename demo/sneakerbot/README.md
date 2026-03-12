@@ -68,9 +68,9 @@ Shopify checkout. You get an order confirmation email from Shopify.
 └─────────────────────────────────────────────┘
 ```
 
-Claude Code cannot inspect the child process. The agent sees the process's stdout (status messages like
-"Entering card details") and its exit code — nothing else. The secret values
-exist only in the child process's environment and in the browser's memory.
+Claude Code cannot inspect the child process. The agent sees the process's
+stdout (status messages like "Entering card details") and its exit code —
+nothing else. The secret values exist only inside the child process.
 
 ## Setup
 
