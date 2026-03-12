@@ -5,6 +5,25 @@ stay locked in the Keypo vault — the agent never sees them. When it's time to
 pay, Touch ID appears on your Mac and you approve the transaction with your
 fingerprint.
 
+## Test Store
+
+This demo is pre-configured to use a test Shopify store with test products
+(**no real money is charged**). You can use Shopify's test card number
+`4242 4242 4242 4242` with any future expiry and any CVV.
+
+| | |
+|---|---|
+| **Store** | `keypo-store-2.myshopify.com` |
+| **Store password** | `rowben` |
+| **Test product** | [Keypo Logo Art](https://keypo-store-2.myshopify.com/products/keypo-logo-art?variant=44740698996759) ($1.00) |
+| **Test card** | `4242424242424242`, any exp, any CVV |
+
+The store is password-protected (Shopify's test mode). The bot handles the
+password gate automatically using the `STORE_PASSWORD` vault secret.
+
+The checkout logic is generic Shopify — to point it at a different store,
+just change the product URL and store password.
+
 ## How It Works
 
 You say something like **"Buy the Keypo Logo Art"** in Claude Code. The agent
@@ -138,17 +157,21 @@ DB_NAME=sneakerbot_demo
 DB_PORT=5432
 DB_HOST=localhost
 NODE_ENV=local
-STORE_PASSWORD=your-store-password
+STORE_PASSWORD=rowben
 ```
 
-**.env.card** — your card details (biometric tier, Touch ID required):
+**.env.card** — card details (biometric tier, Touch ID required).
+For the test store, use Shopify's test card:
 ```
-CARD_NUMBER=your-card-number
-NAME_ON_CARD=your-name
-EXPIRATION_MONTH=MM
-EXPIRATION_YEAR=YY
-SECURITY_CODE=your-cvv
+CARD_NUMBER=4242424242424242
+NAME_ON_CARD=Test Buyer
+EXPIRATION_MONTH=12
+EXPIRATION_YEAR=28
+SECURITY_CODE=123
 ```
+
+> To use a real card instead, replace the values above with your actual card
+> details. The biometric vault ensures they can only be accessed with Touch ID.
 
 Import them into the vault:
 
