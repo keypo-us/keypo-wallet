@@ -22,10 +22,11 @@ just change the product URL.
 ## How It Works
 
 You say something like **"Buy the Keypo Logo Art"** in Claude Code. The agent
-creates a checkout task, then runs a wrapper script that calls
-`keypo-signer vault exec`. You're prompted by Touch ID to decrypt your card details, 
-which are then injected into a headless browser process to complete the
-Shopify checkout. You get an order confirmation email from Shopify.
+runs a wrapper script that calls `keypo-signer vault exec`, a child process
+that is out of view of the agent aka the agent can't see inside the process and
+view sensitive info like your credit card #, PII, etc. You're prompted by Touch ID 
+to decrypt your card details, which are then injected into a headless browser 
+process to complete the Shopify checkout. You get an order confirmation email from Shopify.
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -34,7 +35,7 @@ Shopify checkout. You get an order confirmation email from Shopify.
 │  "Buy the Keypo Logo Art"                   │
 │       │                                     │
 │       ▼                                     │
-│  ./run-with-vault.sh <TASK_ID>              │
+│  ./run-with-vault.sh <product-url>          │
 │       │                                     │
 │  (waits for exit code + reads stdout)       │
 │  (sees only status messages, never secrets) │
@@ -47,7 +48,7 @@ Shopify checkout. You get an order confirmation email from Shopify.
 │  keypo-signer vault exec                    │
 │       │                                     │
 │       ├── open tier (no auth)               │
-│       │   PORT, DB_*, NODE_ENV              │
+│       │   SHIPPING_FIRST_NAME, etc.         │
 │       │                                     │
 │       ├── biometric tier (Touch ID)         │
 │       │   CARD_NUMBER, NAME_ON_CARD, …      │
@@ -56,7 +57,7 @@ Shopify checkout. You get an order confirmation email from Shopify.
 │  Secrets injected into process.env          │
 │       │                                     │
 │       ▼                                     │
-│  node start-task.js                         │
+│  node start-direct.js                       │
 │  └── Puppeteer (headless browser)           │
 │      └── Shopify checkout                   │
 │          └── Types card into payment fields │
@@ -65,7 +66,8 @@ Shopify checkout. You get an order confirmation email from Shopify.
 
 Claude Code cannot inspect the child process. The agent sees the process's
 stdout (status messages like "Entering card details") and its exit code —
-nothing else. The secret values exist only inside the child process.
+nothing else. The secret values (your credit card details) exist only inside 
+the child process.
 
 ## Setup
 
@@ -75,7 +77,6 @@ nothing else. The secret values exist only inside the child process.
 - **[keypo-signer](https://github.com/keypo-us/keypo-wallet/tree/main/keypo-signer)** installed with vault initialized
 - **[Claude Code](https://docs.anthropic.com/en/docs/claude-code)** installed
 - **Node 18** (via [nvm](https://github.com/nvm-sh/nvm))
-- **PostgreSQL** (via Homebrew or Docker)
 
 ### 1. Clone the repo
 
@@ -90,50 +91,17 @@ If you already have the repo, make sure the submodule is initialized:
 git submodule update --init demo/checkout/bot
 ```
 
-### 2. Start PostgreSQL
-
-Using Homebrew:
-
-```bash
-brew install postgresql@14
-brew services start postgresql@14
-```
-
-Or using Docker:
-
-```bash
-docker compose up -d
-```
-
-### 3. Create the database
-
-```bash
-createdb checkout_demo
-psql checkout_demo -c "CREATE USER checkout WITH PASSWORD 'localdev';"
-psql checkout_demo -c "GRANT ALL ON DATABASE checkout_demo TO checkout;"
-psql checkout_demo -c "GRANT ALL ON SCHEMA public TO checkout;"
-```
-
-> If using Docker, the database is created automatically — skip this step.
-
-### 4. Install dependencies
+### 2. Install dependencies
 
 ```bash
 cd bot
 nvm install 18
 nvm use 18
 npm install
-```
-
-### 5. Run migrations and seed data
-
-```bash
-NODE_ENV=local npx knex migrate:latest
-NODE_ENV=local npx knex seed:run
 cd ..
 ```
 
-### 6. Initialize the vault
+### 3. Initialize the vault
 
 If you haven't already set up the Keypo vault:
 
@@ -143,15 +111,19 @@ keypo-signer vault init
 
 Now import your secrets. Create two temporary files:
 
-**.env.open** — non-sensitive config (open tier, no auth required):
+**.env.address** — shipping address (open tier, no auth required).
+You can also copy and edit `seed-data/addresses.env`:
 ```
-PORT=8080
-DB_USERNAME=checkout
-DB_PASSWORD=localdev
-DB_NAME=checkout_demo
-DB_PORT=5432
-DB_HOST=localhost
-NODE_ENV=local
+SHIPPING_FIRST_NAME=Jane
+SHIPPING_LAST_NAME=Doe
+SHIPPING_ADDRESS_LINE_1=123 Main St
+SHIPPING_ADDRESS_LINE_2=
+SHIPPING_CITY=San Francisco
+SHIPPING_STATE=CA
+SHIPPING_POSTAL_CODE=94105
+SHIPPING_COUNTRY=US
+SHIPPING_PHONE=4155551234
+SHIPPING_EMAIL=jane@example.com
 ```
 
 **.env.card** — card details (biometric tier, Touch ID required).
@@ -165,39 +137,43 @@ SECURITY_CODE=<CVV>
 ```
 
 > The biometric vault ensures card details can only be accessed with Touch ID.
+> Your shipping details can also be placed in the biometric vault if you want 
+> extra security.
 
 Import them into the vault:
 
 ```bash
-keypo-signer vault import .env.open --vault open
+keypo-signer vault import .env.address --vault open
 keypo-signer vault import .env.card --vault biometric
 ```
 
 Delete the temporary files — your secrets are now in the vault:
 
 ```bash
-rm .env.open .env.card
+rm .env.address .env.card
 ```
 
 Verify everything is stored:
 
 ```bash
 keypo-signer vault list
-# Should show 7 secrets in "open" and 5 secrets in "biometric"
+# Should show 10 secrets in "open" and 5 secrets in "biometric"
 ```
 
-### 7. Lock down the code
+### 4. Lock down the code
 
-This prevents the agent from modifying the checkout scripts to exfiltrate
+This prevents the agent from tampering with the checkout scripts to exfiltrate
 your card details. See [Tamper protection](#tamper-protection) for why this
 matters.
 
 ```bash
+mkdir -p bot/logs
 sudo chown -R root:wheel run-with-vault.sh bot/
+sudo chown $(whoami) bot/logs  # writable for log output
 sudo chmod -R a+rX,go-w run-with-vault.sh bot/
 ```
 
-### 8. Try it
+### 5. Try it
 
 Open Claude Code in the project directory:
 
@@ -211,9 +187,8 @@ Then ask it to buy something:
 > Buy the Keypo Logo Art
 ```
 
-Claude Code reads `SKILL.md` and follows it automatically — it starts
-Postgres and the API server, discovers products from the store, creates
-a checkout task, and runs `run-with-vault.sh`. Touch ID will appear —
+Claude Code reads `SKILL.md` and follows it automatically — it discovers
+products from the store and runs `run-with-vault.sh`. Touch ID will appear —
 authenticate, and the agent completes the purchase. You'll get an order
 confirmation email from Shopify.
 
@@ -221,9 +196,8 @@ confirmation email from Shopify.
 
 The `SKILL.md` file in this directory is a Claude Code skill definition.
 When Claude Code is launched from this directory, it reads the skill and
-knows how to orchestrate the full checkout flow — starting services,
-discovering products, creating tasks, and running the vault-protected
-checkout. You just ask it what to buy.
+knows how to orchestrate the full checkout flow — discovering products and
+running the vault-protected checkout. You just ask it what to buy.
 
 Once set up, the typical flow is:
 
@@ -232,18 +206,10 @@ Once set up, the typical flow is:
 3. Approve with Touch ID when prompted
 4. Check your email for the order confirmation
 
-Claude Code handles starting and stopping services. If you want to shut
-things down manually:
+To run with a visible browser for debugging:
 
 ```bash
-# Stop the API server
-lsof -ti:8080 | xargs kill
-
-# Stop Postgres (Homebrew)
-brew services stop postgresql@14
-
-# Or stop Postgres (Docker)
-docker compose down
+HEADLESS=false demo/checkout/run-with-vault.sh https://shop.keypo.io/products/keypo-logo-art
 ```
 
 ## Security Model
@@ -268,20 +234,22 @@ An AI agent with file-write access could theoretically modify the checkout
 scripts to exfiltrate secrets from `process.env` at runtime. There are three
 files in the trust chain that must be protected:
 
-1. **`run-with-vault.sh`** — pins the child command to `node ./scripts/start-task.js`.
+1. **`run-with-vault.sh`** — pins the child command to `node ./scripts/start-direct.js`.
    Without this, the agent could call `vault exec` with an arbitrary command
    like `env` or `bash -c 'echo $CARD_NUMBER'` and read secrets from stdout.
-2. **`bot/scripts/start-task.js`** — the entry point that runs inside `vault exec`
+2. **`bot/scripts/start-direct.js`** — the entry point that runs inside `vault exec`
    with secrets in `process.env`. If modified, it could log secrets before
    executing checkout logic.
-3. **`bot/`** (all JS files) — any file in the execution chain (`cluster.js`,
-   `shopify.js`, etc.) has access to `process.env` and could be modified to
+3. **`bot/`** (all JS files) — any file in the execution chain (`shopify.js`,
+   etc.) has access to `process.env` and could be modified to
    exfiltrate values.
 
 Lock all three down by setting root ownership:
 
 ```bash
+mkdir -p bot/logs
 sudo chown -R root:wheel run-with-vault.sh bot/
+sudo chown $(whoami) bot/logs  # writable for log output
 sudo chmod -R a+rX,go-w run-with-vault.sh bot/
 ```
 
@@ -295,7 +263,9 @@ When you need to update the bot code, temporarily reclaim ownership:
 ```bash
 sudo chown -R $(whoami) run-with-vault.sh bot/
 # ... make changes ...
+mkdir -p bot/logs
 sudo chown -R root:wheel run-with-vault.sh bot/
+sudo chown $(whoami) bot/logs
 sudo chmod -R a+rX,go-w run-with-vault.sh bot/
 ```
 
@@ -306,8 +276,7 @@ sudo chmod -R a+rX,go-w run-with-vault.sh bot/
 | `run-with-vault.sh` | Wrapper: `vault exec --env` → checkout process |
 | `.env.vault-template` | Key-name manifest for `vault exec --env` |
 | `SKILL.md` | Claude Code agent skill definition |
-| `docker-compose.yml` | Postgres-only compose (alternative to Homebrew) |
-| `seed-data/` | Address and site reference data |
+| `seed-data/addresses.env` | Example address data for vault import |
 | `bot/` | Checkout bot (based on [SneakerBot](https://github.com/samc621/SneakerBot)) |
 
 ## Next Steps
@@ -318,12 +287,9 @@ find products before buying them.
 
 Shopify now offers MCP servers purpose-built for this:
 
-- **[Storefront MCP](https://shopify.dev/docs/agents/catalog/storefront-mcp)** —
-  search products, manage carts, and answer policy questions for a single store.
-  Each Shopify store exposes its own MCP endpoint.
-- **[Catalog MCP](https://shopify.dev/docs/agents/catalog/mcp)** — search
-  products across all Shopify merchants globally. An agent could find the best
-  price for a product across hundreds of millions of listings.
+- **[Catalog MCP](https://shopify.dev/docs/agents/catalog/mcp)** —
+  search products across all Shopify merchants globally. An agent could find the
+  best price for a product across hundreds of millions of listings.
 
 Combining Shopify's discovery MCP with this demo's vault-protected checkout
 would give an agent the full shopping loop — find a product, then buy it with

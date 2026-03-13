@@ -32,6 +32,7 @@ Run `keypo-wallet --help` or `keypo-signer --help` after installing to see avail
 | `keypo-account/` | Foundry project — Solidity smart account contract (ERC-4337 v0.7) |
 | `keypo-wallet/` | Rust crate + CLI — account setup, signing, bundler interaction |
 | `keypo-signer/` | Swift CLI — Secure Enclave P-256 key management and encrypted secret storage (macOS) |
+| `demo/checkout/` | Checkout demo — AI agent buys from Shopify with Touch ID approval |
 | `homebrew/` | Homebrew tap formulas |
 | `deployments/` | Per-chain deployment records (JSON) |
 | `skills/` | Claude Code agent skills (npm: `keypo-skills`) |
@@ -80,6 +81,18 @@ keypo-signer vault import --label my-vault --file .env
 ```
 
 The `vault exec` workflow is designed for AI agents — inject secrets into tool processes without exposing them in config files or shell history.
+
+### Checkout demo
+
+The [checkout demo](demo/checkout/) shows `vault exec` in a real-world scenario: an AI agent completes a Shopify purchase while your credit card stays locked behind Touch ID. The agent never sees your card details — they're injected into a headless browser process that the agent can't inspect.
+
+```bash
+# After setup (see demo/checkout/README.md):
+demo/checkout/run-with-vault.sh https://shop.keypo.io/products/keypo-logo-art
+# Touch ID prompt appears → approve → order placed
+```
+
+Shipping addresses are stored in the vault's open tier (no auth), card details in the biometric tier (Touch ID). No database, no API server — everything flows through `vault exec`.
 
 ## Getting Started: keypo-wallet
 
