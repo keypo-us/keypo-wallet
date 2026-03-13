@@ -4,8 +4,8 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: sneakerbot_demo
-      POSTGRES_USER: sneakerbot
+      POSTGRES_DB: checkout_demo
+      POSTGRES_USER: checkout
       POSTGRES_PASSWORD: localdev
     volumes:
       - pgdata:/var/lib/postgresql/data

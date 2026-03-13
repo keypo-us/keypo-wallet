@@ -5,24 +5,19 @@ stay locked in the Keypo vault — the agent never sees them. When it's time to
 pay, Touch ID appears on your Mac and you approve the transaction with your
 fingerprint.
 
-## Test Store
+## Store
 
-This demo is pre-configured to use a test Shopify store with test products
-(**no real money is charged**). You can use Shopify's test card number
-`4242 4242 4242 4242` with any future expiry and any CVV.
+This demo purchases real products from `shop.keypo.io` — **you will be charged**.
 
 | | |
 |---|---|
-| **Store** | `keypo-store-2.myshopify.com` |
-| **Store password** | `rowben` |
-| **Test product** | [Keypo Logo Art](https://keypo-store-2.myshopify.com/products/keypo-logo-art?variant=44740698996759) ($1.00) |
-| **Test card** | `4242424242424242`, any exp, any CVV |
-
-The store is password-protected (Shopify's test mode). The bot handles the
-password gate automatically using the `STORE_PASSWORD` vault secret.
+| **Store** | `shop.keypo.io` |
+| **Keypo Logo Art** | [shop.keypo.io/products/keypo-logo-art](https://shop.keypo.io/products/keypo-logo-art?variant=44740698996759) ($1.00) |
+| **Bot bought - Garment washed baseball cap** | [shop.keypo.io/products/bot-bought-garment-washed-baseball-cap](https://shop.keypo.io/products/bot-bought-garment-washed-baseball-cap?variant=44741188059159) ($30.00) |
+| **YubiKey 5C NFC Security Key** | [shop.keypo.io/products/yubikey-5c-nfc-security-key](https://shop.keypo.io/products/yubikey-5c-nfc-security-key?variant=44741031985175) ($60.00) |
 
 The checkout logic is generic Shopify — to point it at a different store,
-just change the product URL and store password.
+just change the product URL.
 
 ## How It Works
 
@@ -52,7 +47,7 @@ Shopify checkout. You get an order confirmation email from Shopify.
 │  keypo-signer vault exec                    │
 │       │                                     │
 │       ├── open tier (no auth)               │
-│       │   PORT, DB_*, STORE_PASSWORD        │
+│       │   PORT, DB_*, NODE_ENV              │
 │       │                                     │
 │       ├── biometric tier (Touch ID)         │
 │       │   CARD_NUMBER, NAME_ON_CARD, …      │
@@ -86,13 +81,13 @@ nothing else. The secret values exist only inside the child process.
 
 ```bash
 git clone --recurse-submodules https://github.com/keypo-us/keypo-wallet.git
-cd keypo-wallet/demo/sneakerbot
+cd keypo-wallet/demo/checkout
 ```
 
 If you already have the repo, make sure the submodule is initialized:
 
 ```bash
-git submodule update --init demo/sneakerbot/bot
+git submodule update --init demo/checkout/bot
 ```
 
 ### 2. Start PostgreSQL
@@ -113,10 +108,10 @@ docker compose up -d
 ### 3. Create the database
 
 ```bash
-createdb sneakerbot_demo
-psql sneakerbot_demo -c "CREATE USER sneakerbot WITH PASSWORD 'localdev';"
-psql sneakerbot_demo -c "GRANT ALL ON DATABASE sneakerbot_demo TO sneakerbot;"
-psql sneakerbot_demo -c "GRANT ALL ON SCHEMA public TO sneakerbot;"
+createdb checkout_demo
+psql checkout_demo -c "CREATE USER checkout WITH PASSWORD 'localdev';"
+psql checkout_demo -c "GRANT ALL ON DATABASE checkout_demo TO checkout;"
+psql checkout_demo -c "GRANT ALL ON SCHEMA public TO checkout;"
 ```
 
 > If using Docker, the database is created automatically — skip this step.
@@ -151,33 +146,31 @@ Now import your secrets. Create two temporary files:
 **.env.open** — non-sensitive config (open tier, no auth required):
 ```
 PORT=8080
-DB_USERNAME=sneakerbot
+DB_USERNAME=checkout
 DB_PASSWORD=localdev
-DB_NAME=sneakerbot_demo
+DB_NAME=checkout_demo
 DB_PORT=5432
 DB_HOST=localhost
 NODE_ENV=local
-STORE_PASSWORD=rowben
 ```
 
 **.env.card** — card details (biometric tier, Touch ID required).
-For the test store, use Shopify's test card:
+Replace the placeholders with your actual card details:
 ```
-CARD_NUMBER=4242424242424242
-NAME_ON_CARD=Test Buyer
-EXPIRATION_MONTH=12
-EXPIRATION_YEAR=28
-SECURITY_CODE=123
+CARD_NUMBER=<your card number>
+NAME_ON_CARD=<name as printed on card>
+EXPIRATION_MONTH=<MM>
+EXPIRATION_YEAR=<YY>
+SECURITY_CODE=<CVV>
 ```
 
-> To use a real card instead, replace the values above with your actual card
-> details. The biometric vault ensures they can only be accessed with Touch ID.
+> The biometric vault ensures card details can only be accessed with Touch ID.
 
 Import them into the vault:
 
 ```bash
-keypo-signer vault import .env.open --policy open
-keypo-signer vault import .env.card --policy biometric
+keypo-signer vault import .env.open --vault open
+keypo-signer vault import .env.card --vault biometric
 ```
 
 Delete the temporary files — your secrets are now in the vault:
@@ -190,7 +183,7 @@ Verify everything is stored:
 
 ```bash
 keypo-signer vault list
-# Should show 8 secrets in "open" and 5 secrets in "biometric"
+# Should show 7 secrets in "open" and 5 secrets in "biometric"
 ```
 
 ### 7. Lock down the code
@@ -206,14 +199,6 @@ sudo chmod -R a+rX,go-w run-with-vault.sh bot/
 
 ### 8. Try it
 
-Start the API server:
-
-```bash
-cd bot
-NODE_ENV=local node ./scripts/start-api-server.js &
-cd ..
-```
-
 Open Claude Code in the project directory:
 
 ```bash
@@ -226,20 +211,29 @@ Then ask it to buy something:
 > Buy the Keypo Logo Art
 ```
 
-Touch ID will appear — authenticate, and the agent completes the purchase.
-You'll get an order confirmation email from Shopify.
+Claude Code reads `SKILL.md` and follows it automatically — it starts
+Postgres and the API server, discovers products from the store, creates
+a checkout task, and runs `run-with-vault.sh`. Touch ID will appear —
+authenticate, and the agent completes the purchase. You'll get an order
+confirmation email from Shopify.
 
 ## Usage
 
+The `SKILL.md` file in this directory is a Claude Code skill definition.
+When Claude Code is launched from this directory, it reads the skill and
+knows how to orchestrate the full checkout flow — starting services,
+discovering products, creating tasks, and running the vault-protected
+checkout. You just ask it what to buy.
+
 Once set up, the typical flow is:
 
-1. Start Postgres and the API server (if not already running)
-2. Open Claude Code in this directory
-3. Ask it to buy a product (e.g., "Buy the Keypo Logo Art")
-4. Approve with Touch ID when prompted
-5. Check your email for the order confirmation
+1. Open Claude Code in this directory
+2. Ask it to buy a product (e.g., "Buy the Keypo Logo Art")
+3. Approve with Touch ID when prompted
+4. Check your email for the order confirmation
 
-To shut everything down:
+Claude Code handles starting and stopping services. If you want to shut
+things down manually:
 
 ```bash
 # Stop the API server
@@ -314,7 +308,7 @@ sudo chmod -R a+rX,go-w run-with-vault.sh bot/
 | `SKILL.md` | Claude Code agent skill definition |
 | `docker-compose.yml` | Postgres-only compose (alternative to Homebrew) |
 | `seed-data/` | Address and site reference data |
-| `bot/` | Checkout bot (fork of [SneakerBot](https://github.com/samc621/SneakerBot)) |
+| `bot/` | Checkout bot (based on [SneakerBot](https://github.com/samc621/SneakerBot)) |
 
 ## Next Steps
 
