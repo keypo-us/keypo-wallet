@@ -18,6 +18,9 @@ struct VaultExecCommand: ParsableCommand {
     @Option(name: .long, help: "Path to .env file for key name extraction")
     var env: String?
 
+    @Option(name: .long, help: "Custom Touch ID prompt message (default: shows command name)")
+    var reason: String?
+
     @Argument(parsing: .captureForPassthrough)
     var command: [String] = []
 
@@ -131,7 +134,12 @@ struct VaultExecCommand: ParsableCommand {
             var authContext: LAContext? = nil
             if policyName == "biometric" || policyName == "passcode" {
                 let context = LAContext()
-                var reason = "keypo-vault: decrypt secrets for: \(commandStr)"
+                var reason: String
+                if let custom = self.reason, !custom.isEmpty {
+                    reason = custom
+                } else {
+                    reason = "keypo-vault: decrypt secrets for: \(commandStr)"
+                }
                 if reason.count > 150 {
                     reason = String(reason.prefix(147)) + "..."
                 }
