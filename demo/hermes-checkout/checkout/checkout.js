@@ -419,10 +419,13 @@ async function main() {
       status('Warning: could not extract cart total for price check 1, continuing...');
     }
 
-    // Step 8: Fill shipping info
-    status('Filling shipping information...');
+    // Modern Shopify single-page checkout (2024+):
+    // All fields (email, card, address) appear on ONE page.
+    // Order: email → card (iframes) → billing address → Pay now
+    // This matches the working demo/checkout/bot/sites/shopify.js flow.
 
-    // Fill email (required by Shopify checkout)
+    // Step 8a: Fill email
+    status('Filling contact email...');
     const emailAddress = process.env.SHIP_EMAIL || `${process.env.SHIP_FIRST_NAME.toLowerCase()}@example.com`;
     try {
       const emailSelector = 'input[autocomplete="email"], input[type="email"], input[name="email"]';
@@ -451,6 +454,56 @@ async function main() {
     } catch (_) {
       // No modal
     }
+
+    // Step 8b: Fill card details in iframes (BEFORE address, matching shopify.js)
+    status('Filling payment information...');
+    try {
+      await page.waitForSelector('iframe', { timeout: 15000 });
+    } catch (err) {
+      status(`Warning: no iframes found: ${err.message}`);
+    }
+    await sleep(2000);
+    const iframes = await page.$$('iframe');
+    status(`Found ${iframes.length} iframes`);
+
+    // Card number
+    const cardFilled = await typeInCardIframe(page, iframes, 'Card number', process.env.CARD_NUMBER);
+    if (!cardFilled) {
+      status('Warning: could not fill card number via iframe');
+    }
+    await sleep(1000);
+
+    // Name on card
+    await typeInCardIframe(page, iframes, 'Name on card', process.env.CARD_NAME);
+    await sleep(1000);
+
+    // Expiration date (MM / YY format — Shopify expects concatenated MMYY)
+    const expiry = process.env.CARD_EXP_MONTH + process.env.CARD_EXP_YEAR;
+    await typeInCardIframe(page, iframes, 'Expiration date (MM / YY)', expiry);
+    await sleep(1000);
+
+    // Security code / CVV
+    await typeInCardIframe(page, iframes, 'Security code', process.env.CARD_CVV);
+    await sleep(1000);
+
+    // Dismiss "Save card?" modal if it appears
+    try {
+      const noThanksBtn = await page.evaluateHandle(() => {
+        const buttons = document.querySelectorAll('button');
+        for (const btn of buttons) {
+          if (btn.textContent.trim() === 'No Thanks') return btn;
+        }
+        return null;
+      });
+      if (noThanksBtn && noThanksBtn.asElement()) {
+        status('Dismissing "Save card?" modal...');
+        await noThanksBtn.click();
+        await sleep(1000);
+      }
+    } catch (_) {}
+
+    // Step 8c: Fill billing/shipping address
+    status('Filling address information...');
 
     // Country
     try {
@@ -536,7 +589,6 @@ async function main() {
         await page.select('select[autocomplete="address-level1"], select[name*="zone"]', process.env.SHIP_STATE);
         await sleep(500);
       } else {
-        // Some Shopify checkouts use a text input for state
         const stateInput = await page.$('input[autocomplete="address-level1"], input[name*="zone"]');
         if (stateInput) {
           await stateInput.click({ clickCount: 3 });
@@ -560,76 +612,51 @@ async function main() {
       status(`ZIP: ${err.message}`);
     }
 
-    // Phone
-    try {
-      const phoneInput = await page.$('input[autocomplete="tel"], input[name*="phone"]');
-      if (phoneInput) {
-        await phoneInput.click({ clickCount: 3 });
-        await phoneInput.type(process.env.SHIP_PHONE, { delay: 10 });
-        await sleep(500);
-      }
-    } catch (err) {
-      status(`Phone: ${err.message}`);
-    }
+    // Phone — skip on single-page checkout to avoid triggering Shop Pay "Save my information" section
 
-    // Step 9: Select shipping method
-    // On modern Shopify single-page checkout, shipping methods appear after address is filled.
-    // We may need to click "Continue to shipping" on multi-page checkouts first.
-    status('Selecting shipping method...');
-
-    // Try clicking continue/submit button if this is a multi-step checkout
+    // Uncheck "Save my information for a faster checkout" if present
     try {
-      const continueBtn = await page.evaluateHandle(() => {
-        const buttons = document.querySelectorAll('button');
-        for (const btn of buttons) {
-          const text = btn.textContent.toLowerCase().trim();
-          if (text.includes('continue to shipping') || text.includes('continue to delivery')) {
-            return btn;
-          }
+      const saveCheckbox = await page.$('input[type="checkbox"][name*="save"], input[type="checkbox"][id*="save-my-info"], input[type="checkbox"][id*="RememberMe"]');
+      if (saveCheckbox) {
+        const isChecked = await page.evaluate(el => el.checked, saveCheckbox);
+        if (isChecked) {
+          status('Unchecking "Save my information" checkbox...');
+          await saveCheckbox.click();
+          await sleep(1000);
         }
-        return null;
-      });
-      if (continueBtn && continueBtn.asElement()) {
-        await continueBtn.click();
-        await sleep(3000);
-      }
-    } catch (_) {}
-
-    // Wait for shipping methods to appear and select first one
-    await sleep(3000);
-    try {
-      // Shopify shipping methods are usually radio buttons
-      const shippingRadio = await page.$('input[type="radio"][name*="shipping"], input[type="radio"][name*="delivery"]');
-      if (shippingRadio) {
-        await shippingRadio.click();
-        await sleep(1000);
-      }
-    } catch (_) {}
-
-    // Try clicking "Continue to payment" if multi-step
-    try {
-      const paymentBtn = await page.evaluateHandle(() => {
-        const buttons = document.querySelectorAll('button');
-        for (const btn of buttons) {
-          const text = btn.textContent.toLowerCase().trim();
-          if (text.includes('continue to payment')) {
-            return btn;
+      } else {
+        // Try finding by label text
+        const checkbox = await page.evaluateHandle(() => {
+          const labels = document.querySelectorAll('label');
+          for (const label of labels) {
+            if (label.textContent.includes('Save my information')) {
+              const input = label.querySelector('input[type="checkbox"]') ||
+                           document.getElementById(label.getAttribute('for'));
+              if (input && input.checked) return input;
+            }
           }
+          // Also try the checkbox icon/div that Shopify sometimes uses
+          const checkboxes = document.querySelectorAll('[role="checkbox"][aria-checked="true"]');
+          for (const cb of checkboxes) {
+            const parent = cb.closest('[class*="save"], [class*="remember"]');
+            if (parent) return cb;
+          }
+          return null;
+        });
+        if (checkbox && checkbox.asElement()) {
+          status('Unchecking "Save my information"...');
+          await checkbox.click();
+          await sleep(1000);
         }
-        return null;
-      });
-      if (paymentBtn && paymentBtn.asElement()) {
-        await paymentBtn.click();
-        await sleep(3000);
       }
     } catch (_) {}
 
-    // Step 10: Price check 2 — total after shipping
-    status('Price check 2: verifying total with shipping...');
+    // Step 9: Price check 2 — verify total before submitting
+    status('Price check 2: verifying total...');
     await sleep(2000);
     const totalWithShipping = await extractTotal(page);
     if (totalWithShipping !== null) {
-      status(`Total with shipping: $${totalWithShipping.toFixed(2)}`);
+      status(`Total: $${totalWithShipping.toFixed(2)}`);
       if (totalWithShipping > max_price) {
         fatal(EXIT_PRICE, 'PRICE_CHECK_FAILED', `total $${totalWithShipping.toFixed(2)} exceeds max $${max_price.toFixed(2)}`);
       }
@@ -637,32 +664,6 @@ async function main() {
     } else {
       status('Warning: could not extract total for price check 2, continuing...');
     }
-
-    // Step 11: Fill payment — use iframe card-filling pattern from shopify.js
-    status('Filling payment information...');
-    await page.waitForSelector('iframe', { timeout: 15000 });
-    await sleep(2000);
-    const iframes = await page.$$('iframe');
-
-    // Card number
-    const cardFilled = await typeInCardIframe(page, iframes, 'Card number', process.env.CARD_NUMBER);
-    if (!cardFilled) {
-      status('Warning: could not fill card number via iframe');
-    }
-    await sleep(1000);
-
-    // Name on card
-    await typeInCardIframe(page, iframes, 'Name on card', process.env.CARD_NAME);
-    await sleep(1000);
-
-    // Expiration date (MM / YY format — Shopify expects concatenated MMYY)
-    const expiry = process.env.CARD_EXP_MONTH + process.env.CARD_EXP_YEAR;
-    await typeInCardIframe(page, iframes, 'Expiration date (MM / YY)', expiry);
-    await sleep(1000);
-
-    // Security code / CVV
-    await typeInCardIframe(page, iframes, 'Security code', process.env.CARD_CVV);
-    await sleep(1000);
 
     // Step 12: Submit — click "Pay now"
     status('Clicking Pay now...');
@@ -683,10 +684,46 @@ async function main() {
 
     await payNowBtn.click();
     status('Waiting for order confirmation...');
-    await sleep(10000);
 
-    // Step 13: Check result
-    const currentUrl = page.url();
+    // Wait for either: URL change to confirmation page, or error appearing on page
+    // Modern Shopify checkouts can take 15-30 seconds to process payment
+    const confirmationPatterns = ['thank-you', 'thank_you', 'orders/', 'order-confirmation'];
+    let currentUrl = page.url();
+
+    for (let attempt = 0; attempt < 12; attempt++) {
+      await sleep(5000);
+      currentUrl = page.url();
+      status(`Checking result (attempt ${attempt + 1}/12, url: ${currentUrl.substring(0, 80)}...)`);
+
+      // Check if we've navigated to a confirmation page
+      if (confirmationPatterns.some(p => currentUrl.includes(p))) {
+        break;
+      }
+
+      // Check for error text on current page (card decline, etc.)
+      const errorOnPage = await page.evaluate(() => {
+        const errorSelectors = [
+          '[class*="error"] [class*="message"]',
+          '[class*="notice--error"]',
+          '.banner--error',
+          '[role="alert"]',
+          '[class*="Error"]',
+          '[data-error]',
+        ];
+        for (const sel of errorSelectors) {
+          const els = document.querySelectorAll(sel);
+          for (const el of els) {
+            const text = el.textContent.trim();
+            if (text && text.length > 5) return text;
+          }
+        }
+        return null;
+      });
+
+      if (errorOnPage) {
+        fatal(EXIT_CHECKOUT, 'CHECKOUT_ERROR', `payment failed: ${errorOnPage}`);
+      }
+    }
 
     // Check for order confirmation page
     if (currentUrl.includes('thank-you') || currentUrl.includes('thank_you') || currentUrl.includes('orders/')) {
