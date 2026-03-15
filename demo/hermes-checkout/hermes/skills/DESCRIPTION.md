@@ -17,3 +17,11 @@ Format each option as:
 N. Store Name — Product Title
    $XX.XX for quantity/size ($X.XX/unit) | Rating: X.X/5 (N reviews)
 ```
+
+## Taste Profiles
+
+Build and manage taste profiles (self and gift recipients) through an interactive questionnaire. Profiles stored in Hermes memory drive personalized shopping recommendations. See `keypo-profiles` skill.
+
+## Scheduled Shopping
+
+Generate recurring personalized shopping lists and birthday gift proposals based on taste profiles. Uses Hermes cron for scheduling, Telegram for delivery, and the existing checkout pipeline for purchases. Depends on keypo-profiles, keypo-comparison-shop, and keypo-checkout. See `keypo-scheduled-shop` skill.

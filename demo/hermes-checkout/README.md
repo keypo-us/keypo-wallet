@@ -224,6 +224,49 @@ When the token expires (401 errors from Catalog MCP):
 8. Result — order placed (real card) or card decline (fake card).
 9. Kicker: "My agent just searched every Shopify store, found the best deal, and bought it. It never saw my credit card."
 
+## Profiles & Scheduled Shopping
+
+Personalized recurring shopping based on taste profiles.
+
+### Setup
+
+```bash
+# Deploy the new skills to Hermes
+mkdir -p ~/.hermes/skills/keypo/keypo-profiles ~/.hermes/skills/keypo/keypo-scheduled-shop
+cp hermes/skills/keypo-profiles.md ~/.hermes/skills/keypo/keypo-profiles/SKILL.md
+cp hermes/skills/keypo-scheduled-shop.md ~/.hermes/skills/keypo/keypo-scheduled-shop/SKILL.md
+cp hermes/skills/DESCRIPTION.md ~/.hermes/skills/keypo/DESCRIPTION.md
+```
+
+No new tools or daemon changes needed — these skills use existing tools and Hermes built-ins (memory, cron).
+
+### Usage
+
+**Build a taste profile:**
+```
+You: Set up my shopping preferences
+Hermes: [asks questions about food, categories, brands, budget — 1-2 per message]
+Hermes: [shows 8-12 images for thumbs up/down style assessment]
+Hermes: [presents profile summary, asks for confirmation]
+```
+
+**Set up weekly shopping:**
+```
+You: Start buying me stuff every Monday at 9am
+Hermes: [confirms cron job created]
+# Every Monday at 9am, Hermes sends a personalized 2-3 item shopping list via Telegram
+# Reply "yes" to approve → Touch ID → checkout
+```
+
+**Set up gift reminders:**
+```
+You: Set up a gift profile for Mom. Her birthday is July 15.
+Hermes: [questionnaire about Mom's preferences]
+# 14 days before her birthday, Hermes sends gift ideas via Telegram
+```
+
+Profiles are stored in Hermes memory. They persist across sessions and drive all shopping recommendations.
+
 ## Telegram (Stage 2)
 
 1. Create a bot via @BotFather in Telegram
