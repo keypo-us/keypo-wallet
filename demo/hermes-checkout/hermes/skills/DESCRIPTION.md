@@ -1,0 +1,1 @@
+Skills for Keypo hardware-secured vault and checkout flows. One unified skill (`keypo-shopping`) covers all shopping intents: buying from Shopify stores, comparing prices, taste profiling, recurring shopping lists, gift proposals, and vault security questions. Card data never leaves the Secure Enclave — the agent finds products but never handles payment.
