@@ -16,6 +16,10 @@ struct VaultCommand: ParsableCommand {
             VaultExecCommand.self,
             VaultImportCommand.self,
             VaultDestroyCommand.self,
+            VaultBackupCommand.self,
+            VaultRestoreCommand.self,
+            VaultBackupResetCommand.self,
+            VaultBackupInfoCommand.self,
         ]
     )
 }
