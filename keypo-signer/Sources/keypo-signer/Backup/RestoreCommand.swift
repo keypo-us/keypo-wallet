@@ -51,6 +51,7 @@ struct VaultRestoreCommand: ParsableCommand {
         }
 
         // 4. Prompt for passphrase
+        writeStderrRaw("Tip: If you used a generated passphrase, enter all 4 words as a single string separated by spaces (e.g., \"word1 word2 word3 word4\").")
         guard let input = readSecretFromTerminal(prompt: "Enter your backup passphrase: ") else {
             writeStderr("failed to read passphrase")
             throw ExitCode(1)

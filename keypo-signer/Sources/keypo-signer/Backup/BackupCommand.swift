@@ -48,6 +48,7 @@ struct VaultBackupCommand: ParsableCommand {
             syncedKey = existing
             isFirstBackup = false
 
+            writeStderrRaw("Tip: If you used a generated passphrase, enter all 4 words separated by spaces.")
             guard let input = readSecretFromTerminal(prompt: "Enter your backup passphrase: ") else {
                 writeStderr("failed to read passphrase")
                 throw ExitCode(1)
