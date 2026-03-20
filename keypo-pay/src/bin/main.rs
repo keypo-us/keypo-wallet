@@ -883,6 +883,14 @@ async fn run_send(
     let token_book = config::load_tokens()?;
     let rpc_url = config::resolve_rpc(rpc_override, &wallet);
 
+    // Validate access key name early (before any network calls)
+    if let Some(name) = key_name {
+        let access_keys = config::load_access_keys()?;
+        if !access_keys.keys.iter().any(|k| k.name == name) {
+            return Err(keypo_pay::Error::AccessKeyNotFound(name.to_string()).into());
+        }
+    }
+
     // Resolve token (default to configured default or pathusd)
     let token_str = token_name.unwrap_or(
         wallet.default_token.as_deref().unwrap_or("pathusd"),
@@ -915,7 +923,7 @@ async fn run_send(
             .keys
             .iter()
             .find(|k| k.name == name)
-            .ok_or_else(|| keypo_pay::Error::AccessKeyNotFound(name.to_string()))?;
+            .unwrap(); // safe: validated above
         let wallet_addr: Address = wallet
             .address
             .parse()
