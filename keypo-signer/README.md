@@ -75,7 +75,7 @@ This is the recommended way for AI agents to run commands that need secrets. See
 
 ### Backup & Restore
 
-`vault backup` encrypts all vault secrets and writes them to iCloud Drive. Encryption uses two factors: an iCloud Keychain synced key (available on all your Apple devices) and a passphrase displayed once at backup time. Both are required to restore — neither alone is sufficient.
+`vault backup` encrypts all vault secrets and writes them to iCloud Drive. Encryption uses two factors: an iCloud Keychain synced key (available on all your Apple devices) and a passphrase displayed once at backup time. Both are required to restore — neither alone is sufficient. You can store your passphrase at [keypo.io/app](https://www.keypo.io/app) or write it down in a safe place.
 
 Key derivation uses Argon2id (memory-hard) + HKDF to produce the AES-256-GCM encryption key.
 

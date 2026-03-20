@@ -96,6 +96,8 @@ keypo-signer vault backup info
 keypo-signer vault restore
 ```
 
+Store your backup passphrase at [keypo.io/app](https://www.keypo.io/app) or write it down in a safe place.
+
 ## Getting Started: keypo-wallet (optional extension)
 
 keypo-wallet is an optional extension for users who want on-chain smart account capabilities. It turns a Mac into a programmable hardware wallet, building on `keypo-signer` for key management and adding smart account delegation, bundler submission, and gas sponsorship.

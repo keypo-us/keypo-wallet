@@ -86,7 +86,7 @@ echo -n "test" | keypo-signer vault set TEST_KEY --vault open
 keypo-signer vault get TEST_KEY
 ```
 
-**Backup setup (optional):** Vault backup requires iCloud sign-in, iCloud Drive, and iCloud Keychain enabled on the Mac. Run `keypo-signer vault backup` to create the first backup — it will generate a passphrase and synced encryption key automatically.
+**Backup setup (optional):** Vault backup requires iCloud sign-in, iCloud Drive, and iCloud Keychain enabled on the Mac. Run `keypo-signer vault backup` to create the first backup — it will generate a passphrase and synced encryption key automatically. Store the passphrase at [keypo.io/app](https://www.keypo.io/app) or write it down in a safe place.
 
 ## CLI Configuration (keypo-wallet)
 
