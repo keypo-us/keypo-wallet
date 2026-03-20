@@ -59,6 +59,10 @@ pub async fn send_tempo_tx(
     }).sum();
     let gas_limit = base_gas + auth_gas + call_gas + 100_000; // generous buffer
 
+    // Save first call info for revert reason simulation (before move)
+    let first_call_to = calls.first().map(|c| c.to);
+    let first_call_data = calls.first().map(|c| c.data.to_vec());
+
     // Build transaction
     let tx = TempoTx {
         chain_id: wallet.chain_id,
@@ -113,10 +117,33 @@ pub async fn send_tempo_tx(
     let receipt = rpc::wait_for_receipt(&client, rpc_url, tx_hash, Duration::from_secs(60)).await?;
 
     if !receipt.status {
-        return Err(Error::TransactionFailed(format!(
-            "tx {tx_hash} reverted in block {}",
-            receipt.block_number
-        )));
+        // Try to get a useful revert reason
+        let reason = if let Some(ref r) = receipt.revert_reason {
+            r.clone()
+        } else {
+            // Try simulating the first call to get the revert reason
+            if let (Some(to), Some(data)) = (first_call_to, &first_call_data) {
+                rpc::get_revert_reason(&client, rpc_url, sender_address, to, data)
+                    .await
+                    .unwrap_or_default()
+            } else {
+                String::new()
+            }
+        };
+
+        let mut msg = format!("transaction reverted (tx {})", tx_hash);
+        if !reason.is_empty() {
+            msg = format!("{msg}: {reason}");
+        }
+
+        // Add hints for common errors
+        if reason.contains("spending limit") || reason.contains("SpendingLimit") {
+            msg = format!("{msg}\n  Hint: The access key's spending limit is too low. Check with 'access-key info --name <key>'.");
+        } else if reason.contains("insufficient") || reason.contains("InsufficientBalance") {
+            msg = format!("{msg}\n  Hint: Not enough token balance. Check with 'keypo-pay balance'.");
+        }
+
+        return Err(Error::TransactionFailed(msg));
     }
 
     Ok(TxResult {

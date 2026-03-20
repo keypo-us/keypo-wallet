@@ -148,6 +148,57 @@ pub async fn fund_testnet_address(
     Ok(())
 }
 
+/// Tries to get a revert reason by re-simulating a failed transaction's calls.
+/// Returns a human-readable error string, or None if it can't determine the reason.
+pub async fn get_revert_reason(
+    client: &reqwest::Client,
+    rpc_url: &str,
+    from: Address,
+    to: Address,
+    data: &[u8],
+) -> Option<String> {
+    let result = json_rpc_post(
+        client,
+        rpc_url,
+        "eth_call",
+        serde_json::json!([
+            {
+                "from": format!("{from}"),
+                "to": format!("{to}"),
+                "data": format!("0x{}", hex::encode(data)),
+            },
+            "latest"
+        ]),
+    )
+    .await;
+
+    match result {
+        Err(Error::Rpc(msg)) => {
+            // Parse the RPC error for a revert reason
+            // Common format: {"code": 3, "message": "execution reverted: SpendingLimitExceeded", "data": "0x..."}
+            if msg.contains("SpendingLimitExceeded") {
+                return Some("spending limit exceeded for this access key".to_string());
+            }
+            if msg.contains("InsufficientBalance") || msg.contains("insufficient") {
+                return Some("insufficient token balance".to_string());
+            }
+            if msg.contains("UnauthorizedCaller") {
+                return Some("unauthorized: only the root key can perform this action".to_string());
+            }
+            // Extract the message from the RPC error JSON
+            if let Some(start) = msg.find("\"message\":\"") {
+                let rest = &msg[start + 11..];
+                if let Some(end) = rest.find('"') {
+                    return Some(rest[..end].to_string());
+                }
+            }
+            // Return raw error if we can't parse it
+            Some(msg)
+        }
+        _ => None,
+    }
+}
+
 /// Makes an `eth_call` to a contract.
 pub async fn eth_call(
     client: &reqwest::Client,
@@ -186,6 +237,7 @@ pub struct TransactionReceipt {
     pub block_number: u64,
     pub status: bool,
     pub gas_used: u64,
+    pub revert_reason: Option<String>,
 }
 
 fn parse_receipt(value: &Value) -> Result<TransactionReceipt> {
@@ -216,12 +268,67 @@ fn parse_receipt(value: &Value) -> Result<TransactionReceipt> {
         .transpose()?
         .unwrap_or(0);
 
+    // Try to extract revert reason from receipt
+    let revert_reason = if !status {
+        extract_revert_reason(value)
+    } else {
+        None
+    };
+
     Ok(TransactionReceipt {
         tx_hash,
         block_number,
         status,
         gas_used,
+        revert_reason,
     })
+}
+
+/// Tries to extract a human-readable revert reason from a receipt.
+fn extract_revert_reason(value: &Value) -> Option<String> {
+    // Check for revertReason field (some nodes include it)
+    if let Some(reason) = value.get("revertReason").and_then(|v| v.as_str()) {
+        return Some(reason.to_string());
+    }
+
+    // Check for statusReason field
+    if let Some(reason) = value.get("statusReason").and_then(|v| v.as_str()) {
+        return Some(reason.to_string());
+    }
+
+    // Try to decode revert data from logs or output
+    // Common Solidity revert: 0x08c379a0 + ABI-encoded string
+    if let Some(output) = value.get("output").and_then(|v| v.as_str()) {
+        if let Some(msg) = decode_revert_string(output) {
+            return Some(msg);
+        }
+    }
+
+    None
+}
+
+/// Decodes a Solidity `Error(string)` revert from hex output.
+fn decode_revert_string(hex_output: &str) -> Option<String> {
+    let stripped = hex_output.strip_prefix("0x").unwrap_or(hex_output);
+    let bytes = hex::decode(stripped).ok()?;
+
+    // Error(string) selector = 0x08c379a0
+    if bytes.len() < 68 || bytes[0..4] != [0x08, 0xc3, 0x79, 0xa0] {
+        return None;
+    }
+
+    // ABI decode: offset at bytes 4..36, length at offset, string data follows
+    let offset = u64::from_be_bytes(bytes[28..36].try_into().ok()?) as usize;
+    let start = 4 + offset;
+    if start + 32 > bytes.len() {
+        return None;
+    }
+    let len = u64::from_be_bytes(bytes[start + 24..start + 32].try_into().ok()?) as usize;
+    let str_start = start + 32;
+    if str_start + len > bytes.len() {
+        return None;
+    }
+    String::from_utf8(bytes[str_start..str_start + len].to_vec()).ok()
 }
 
 // ---------------------------------------------------------------------------
