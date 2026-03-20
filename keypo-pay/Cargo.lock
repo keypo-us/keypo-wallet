@@ -2380,6 +2380,7 @@ name = "keypo-pay"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "base64",
  "clap",
  "dirs",
  "hex",

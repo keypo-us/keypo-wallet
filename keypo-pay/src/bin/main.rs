@@ -93,6 +93,24 @@ EXAMPLES:
     /// Manage token address book
     #[command(subcommand)]
     Token(TokenAction),
+
+    /// Make a paid request to an MPP-enabled endpoint
+    #[command(
+        long_about = "Make an HTTP request to an MPP-enabled endpoint and pay via Tempo charge.\n\n\
+            Handles the 402 challenge-response flow: parse challenge, submit payment on-chain,\n\
+            retry with credential.",
+        after_long_help = "\
+EXAMPLES:
+  keypo-pay pay https://api.example.com/resource --key agent-1"
+    )]
+    Pay {
+        /// URL to request
+        url: String,
+
+        /// Named access key to pay with
+        #[arg(long)]
+        key: String,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -295,6 +313,7 @@ async fn main() {
         } => run_send(cli.rpc.as_deref(), &to, &amount, token.as_deref(), key.as_deref(), use_root_key).await,
         Commands::Balance { token } => run_balance(cli.rpc.as_deref(), token.as_deref()).await,
         Commands::Token(action) => run_token(action).await,
+        Commands::Pay { url, key } => run_pay(cli.rpc.as_deref(), &url, &key).await,
     };
 
     if let Err(e) = result {
@@ -985,6 +1004,55 @@ async fn run_balance(
     Ok(())
 }
 
+async fn run_pay(
+    rpc_override: Option<&str>,
+    url: &str,
+    key_name: &str,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let wallet = config::load_wallet_config()?;
+    let access_keys = config::load_access_keys()?;
+    let token_book = config::load_tokens()?;
+    let rpc_url = config::resolve_rpc(rpc_override, &wallet);
+
+    let entry = access_keys
+        .keys
+        .iter()
+        .find(|k| k.name == key_name)
+        .ok_or_else(|| keypo_pay::Error::AccessKeyNotFound(key_name.to_string()))?
+        .clone();
+
+    let signer = KeypoSigner::new();
+
+    let response = keypo_pay::mpp::pay_charge(
+        url,
+        &rpc_url,
+        &wallet,
+        &entry,
+        &signer,
+        &token_book.tokens,
+    )
+    .await?;
+
+    if let Some(tx_hash) = &response.tx_hash {
+        println!("Payment TX: {tx_hash}");
+    }
+
+    println!("Response status: {}", response.status);
+
+    if let Some(receipt) = &response.receipt {
+        println!("Receipt: {} (ref: {})",
+            receipt.status,
+            receipt.reference.as_deref().unwrap_or("none"),
+        );
+    }
+
+    if !response.body.is_empty() {
+        println!("Body: {}", response.body);
+    }
+
+    Ok(())
+}
+
 async fn run_token(
     action: TokenAction,
 ) -> std::result::Result<(), Box<dyn std::error::Error>> {
@@ -1403,5 +1471,19 @@ mod tests {
     fn token_list_parses() {
         let cli = Cli::try_parse_from(["keypo-pay", "token", "list"]).unwrap();
         assert!(matches!(cli.command, Commands::Token(TokenAction::List)));
+    }
+
+    #[test]
+    fn pay_parses() {
+        let cli = Cli::try_parse_from([
+            "keypo-pay", "pay", "https://api.example.com/resource", "--key", "agent-1",
+        ]).unwrap();
+        match cli.command {
+            Commands::Pay { url, key } => {
+                assert_eq!(url, "https://api.example.com/resource");
+                assert_eq!(key, "agent-1");
+            }
+            _ => panic!("expected Pay"),
+        }
     }
 }
