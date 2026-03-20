@@ -41,6 +41,82 @@ enum Commands {
     /// Manage access keys (create, authorize, revoke, list)
     #[command(subcommand, name = "access-key")]
     AccessKey(AccessKeyAction),
+
+    /// Send tokens (high-level, requires --key or --use-root-key)
+    #[command(
+        long_about = "Send TIP-20 token transfer.\n\n\
+            Use --key to sign with a named access key (subject to spending limits),\n\
+            or --use-root-key to sign with the root key (bypasses limits).",
+        after_long_help = "\
+EXAMPLES:
+  keypo-pay send --to 0xRecipient --amount 0.01 --key agent-1
+  keypo-pay send --to 0xRecipient --amount 0.01 --token pathusd --use-root-key
+  keypo-pay send --to 0xRecipient --amount 0.01 --token alphausd --key agent-1"
+    )]
+    Send {
+        /// Recipient address
+        #[arg(long)]
+        to: String,
+
+        /// Amount in human-readable units (e.g., 0.01)
+        #[arg(long)]
+        amount: String,
+
+        /// Token name or address (defaults to pathusd)
+        #[arg(long)]
+        token: Option<String>,
+
+        /// Named access key to sign with
+        #[arg(long, group = "signer")]
+        key: Option<String>,
+
+        /// Sign with root key (bypasses spending limits)
+        #[arg(long, name = "use-root-key", group = "signer")]
+        use_root_key: bool,
+    },
+
+    /// Check token balance
+    #[command(
+        long_about = "Query TIP-20 token balance for the wallet.",
+        after_long_help = "\
+EXAMPLES:
+  keypo-pay balance
+  keypo-pay balance --token pathusd
+  keypo-pay balance --token 0x20c0000000000000000000000000000000000000"
+    )]
+    Balance {
+        /// Token name or address (defaults to pathusd)
+        #[arg(long)]
+        token: Option<String>,
+    },
+
+    /// Manage token address book
+    #[command(subcommand)]
+    Token(TokenAction),
+}
+
+#[derive(Subcommand, Clone)]
+enum TokenAction {
+    /// Add a token to the address book
+    Add {
+        /// Token name
+        #[arg(long)]
+        name: String,
+
+        /// Token contract address
+        #[arg(long)]
+        address: String,
+    },
+
+    /// Remove a token from the address book
+    Remove {
+        /// Token name to remove
+        #[arg(long)]
+        name: String,
+    },
+
+    /// List all tokens in the address book
+    List,
 }
 
 #[derive(Subcommand, Clone)]
@@ -210,6 +286,15 @@ async fn main() {
             } => run_tx_send(cli.rpc.as_deref(), &to, &token, &amount, key.as_deref()).await,
         },
         Commands::AccessKey(action) => run_access_key(cli.rpc.as_deref(), action).await,
+        Commands::Send {
+            to,
+            amount,
+            token,
+            key,
+            use_root_key,
+        } => run_send(cli.rpc.as_deref(), &to, &amount, token.as_deref(), key.as_deref(), use_root_key).await,
+        Commands::Balance { token } => run_balance(cli.rpc.as_deref(), token.as_deref()).await,
+        Commands::Token(action) => run_token(action).await,
     };
 
     if let Err(e) = result {
@@ -763,6 +848,193 @@ async fn run_access_key_delete(
     Ok(())
 }
 
+async fn run_send(
+    rpc_override: Option<&str>,
+    to: &str,
+    amount: &str,
+    token_name: Option<&str>,
+    key_name: Option<&str>,
+    use_root_key: bool,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    if key_name.is_none() && !use_root_key {
+        return Err("Either --key <name> or --use-root-key is required".into());
+    }
+
+    let wallet = config::load_wallet_config()?;
+    let token_book = config::load_tokens()?;
+    let rpc_url = config::resolve_rpc(rpc_override, &wallet);
+
+    // Resolve token (default to configured default or pathusd)
+    let token_str = token_name.unwrap_or(
+        wallet.default_token.as_deref().unwrap_or("pathusd"),
+    );
+    let token_addr = keypo_pay::token::resolve_token_address(token_str, &token_book.tokens)?;
+
+    // Query decimals
+    let client = reqwest::Client::new();
+    let decimals = keypo_pay::token::query_decimals(&client, &rpc_url, token_addr).await?;
+    let amount_wei = keypo_pay::token::parse_token_amount(amount, decimals)?;
+
+    // Resolve recipient
+    let to_addr: Address = to
+        .parse()
+        .map_err(|e| format!("invalid --to address: {e}"))?;
+
+    // Build TIP-20 transfer call
+    let calldata = keypo_pay::transaction::encode_tip20_transfer(to_addr, amount_wei);
+    let call = TempoCall {
+        to: token_addr,
+        value: U256::ZERO,
+        data: calldata,
+    };
+
+    let signer = KeypoSigner::new();
+
+    let (signing_label, root_address) = if let Some(name) = key_name {
+        let access_keys = config::load_access_keys()?;
+        let entry = access_keys
+            .keys
+            .iter()
+            .find(|k| k.name == name)
+            .ok_or_else(|| keypo_pay::Error::AccessKeyNotFound(name.to_string()))?;
+        let wallet_addr: Address = wallet
+            .address
+            .parse()
+            .map_err(|e| format!("invalid wallet address: {e}"))?;
+        (
+            entry
+                .key_id
+                .split('.')
+                .next_back()
+                .unwrap_or(&entry.key_id)
+                .to_string(),
+            Some(wallet_addr),
+        )
+    } else {
+        let label = wallet
+            .root_key_id
+            .strip_prefix("com.keypo.signer.")
+            .unwrap_or(&wallet.root_key_id);
+        (label.to_string(), None)
+    };
+
+    let result = keypo_pay::transaction::send_tempo_tx(
+        &rpc_url,
+        &wallet,
+        vec![call],
+        &signer,
+        &signing_label,
+        root_address,
+        None,
+    )
+    .await?;
+
+    println!("Transfer sent!");
+    println!("  Tx hash:  {}", result.tx_hash);
+    println!("  Block:    {}", result.block_number);
+    println!("  Gas used: {}", result.gas_used);
+    println!(
+        "  Amount:   {} {}",
+        amount, token_str
+    );
+
+    Ok(())
+}
+
+async fn run_balance(
+    rpc_override: Option<&str>,
+    token_name: Option<&str>,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let wallet = config::load_wallet_config()?;
+    let token_book = config::load_tokens()?;
+    let rpc_url = config::resolve_rpc(rpc_override, &wallet);
+    let wallet_addr: Address = wallet
+        .address
+        .parse()
+        .map_err(|e| format!("invalid wallet address: {e}"))?;
+    let client = reqwest::Client::new();
+
+    // If a specific token is requested, show just that one
+    if let Some(name) = token_name {
+        let token_addr = keypo_pay::token::resolve_token_address(name, &token_book.tokens)?;
+        let decimals = keypo_pay::token::query_decimals(&client, &rpc_url, token_addr).await?;
+        let balance = keypo_pay::token::query_balance(&client, &rpc_url, token_addr, wallet_addr).await?;
+        println!("{}: {}", name, keypo_pay::token::format_token_amount(balance, decimals));
+        return Ok(());
+    }
+
+    // Show all known tokens
+    for token in &token_book.tokens {
+        let token_addr: Address = match token.address.parse() {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+        let decimals = keypo_pay::token::query_decimals(&client, &rpc_url, token_addr)
+            .await
+            .unwrap_or(6);
+        let balance = keypo_pay::token::query_balance(&client, &rpc_url, token_addr, wallet_addr)
+            .await
+            .unwrap_or(U256::ZERO);
+        println!(
+            "{:<12} {}",
+            token.name,
+            keypo_pay::token::format_token_amount(balance, decimals)
+        );
+    }
+
+    Ok(())
+}
+
+async fn run_token(
+    action: TokenAction,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    match action {
+        TokenAction::Add { name, address } => {
+            // Validate address
+            let _: Address = address
+                .parse()
+                .map_err(|e| format!("invalid token address: {e}"))?;
+
+            let mut tokens = config::load_tokens()?;
+
+            // Check for duplicate
+            if tokens.tokens.iter().any(|t| t.name.to_lowercase() == name.to_lowercase()) {
+                return Err(format!("token '{}' already exists", name).into());
+            }
+
+            tokens.tokens.push(config::TokenEntry {
+                name: name.clone(),
+                address,
+            });
+            config::save_tokens(&tokens)?;
+            println!("Token '{}' added.", name);
+        }
+        TokenAction::Remove { name } => {
+            let mut tokens = config::load_tokens()?;
+            let before = tokens.tokens.len();
+            tokens.tokens.retain(|t| t.name.to_lowercase() != name.to_lowercase());
+            if tokens.tokens.len() == before {
+                return Err(keypo_pay::Error::TokenNotFound(name).into());
+            }
+            config::save_tokens(&tokens)?;
+            println!("Token '{}' removed.", name);
+        }
+        TokenAction::List => {
+            let tokens = config::load_tokens()?;
+            if tokens.tokens.is_empty() {
+                println!("No tokens in address book.");
+                return Ok(());
+            }
+            println!("{:<12} Address", "Name");
+            println!("{}", "-".repeat(60));
+            for token in &tokens.tokens {
+                println!("{:<12} {}", token.name, token.address);
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn run_tx_send(
     rpc_override: Option<&str>,
     to: &str,
@@ -1035,5 +1307,101 @@ mod tests {
             }
             _ => panic!("expected AccessKey Delete"),
         }
+    }
+
+    #[test]
+    fn send_with_key_parses() {
+        let cli = Cli::try_parse_from([
+            "keypo-pay", "send",
+            "--to", "0xdead",
+            "--amount", "0.01",
+            "--key", "agent-1",
+        ]).unwrap();
+        match cli.command {
+            Commands::Send { to, amount, key, use_root_key, token, .. } => {
+                assert_eq!(to, "0xdead");
+                assert_eq!(amount, "0.01");
+                assert_eq!(key, Some("agent-1".into()));
+                assert!(!use_root_key);
+                assert!(token.is_none());
+            }
+            _ => panic!("expected Send"),
+        }
+    }
+
+    #[test]
+    fn send_with_root_key_parses() {
+        let cli = Cli::try_parse_from([
+            "keypo-pay", "send",
+            "--to", "0xdead",
+            "--amount", "0.01",
+            "--use-root-key",
+            "--token", "alphausd",
+        ]).unwrap();
+        match cli.command {
+            Commands::Send { use_root_key, token, key, .. } => {
+                assert!(use_root_key);
+                assert_eq!(token, Some("alphausd".into()));
+                assert!(key.is_none());
+            }
+            _ => panic!("expected Send"),
+        }
+    }
+
+    #[test]
+    fn balance_default_parses() {
+        let cli = Cli::try_parse_from(["keypo-pay", "balance"]).unwrap();
+        match cli.command {
+            Commands::Balance { token } => {
+                assert!(token.is_none());
+            }
+            _ => panic!("expected Balance"),
+        }
+    }
+
+    #[test]
+    fn balance_with_token_parses() {
+        let cli = Cli::try_parse_from(["keypo-pay", "balance", "--token", "pathusd"]).unwrap();
+        match cli.command {
+            Commands::Balance { token } => {
+                assert_eq!(token, Some("pathusd".into()));
+            }
+            _ => panic!("expected Balance"),
+        }
+    }
+
+    #[test]
+    fn token_add_parses() {
+        let cli = Cli::try_parse_from([
+            "keypo-pay", "token", "add",
+            "--name", "mytoken",
+            "--address", "0xdead",
+        ]).unwrap();
+        match cli.command {
+            Commands::Token(TokenAction::Add { name, address }) => {
+                assert_eq!(name, "mytoken");
+                assert_eq!(address, "0xdead");
+            }
+            _ => panic!("expected Token Add"),
+        }
+    }
+
+    #[test]
+    fn token_remove_parses() {
+        let cli = Cli::try_parse_from([
+            "keypo-pay", "token", "remove", "--name", "mytoken",
+        ]).unwrap();
+        match cli.command {
+            Commands::Token(TokenAction::Remove { name }) => {
+                assert_eq!(name, "mytoken");
+            }
+            _ => panic!("expected Token Remove"),
+        }
+    }
+
+    #[test]
+    fn token_list_parses() {
+        let cli = Cli::try_parse_from(["keypo-pay", "token", "list"]).unwrap();
+        assert!(matches!(cli.command, Commands::Token(TokenAction::List)));
     }
 }

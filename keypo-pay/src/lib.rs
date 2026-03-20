@@ -6,6 +6,7 @@ pub mod rlp;
 pub mod rpc;
 pub mod signature;
 pub mod signer;
+pub mod token;
 pub mod transaction;
 pub mod types;
 
