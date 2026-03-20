@@ -16,6 +16,10 @@ struct VaultCommand: ParsableCommand {
             VaultExecCommand.self,
             VaultImportCommand.self,
             VaultDestroyCommand.self,
+            VaultBackupCommand.self,
+            VaultRestoreCommand.self,
+            VaultBackupResetCommand.self,
+            VaultBackupInfoCommand.self,
         ]
     )
 }
@@ -61,11 +65,4 @@ func readSecretFromTerminal(prompt: String) -> String? {
     return readLine(strippingNewline: true)
 }
 
-/// Convert EncryptedSecretData to a [String: EncryptedSecretData] dictionary for HMAC computation
-func buildSecretDataMap(from secrets: [String: EncryptedSecret]) throws -> [String: EncryptedSecretData] {
-    var map: [String: EncryptedSecretData] = [:]
-    for (name, secret) in secrets {
-        map[name] = try secret.toEncryptedSecretData()
-    }
-    return map
-}
+// buildSecretDataMap is now in KeypoCore.VaultStore (public free function)

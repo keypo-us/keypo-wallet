@@ -1,5 +1,14 @@
 import Foundation
 
+/// Convert [String: EncryptedSecret] to [String: EncryptedSecretData] for HMAC computation.
+public func buildSecretDataMap(from secrets: [String: EncryptedSecret]) throws -> [String: EncryptedSecretData] {
+    var map: [String: EncryptedSecretData] = [:]
+    for (name, secret) in secrets {
+        map[name] = try secret.toEncryptedSecretData()
+    }
+    return map
+}
+
 public class VaultStore {
     public let configDir: URL
 

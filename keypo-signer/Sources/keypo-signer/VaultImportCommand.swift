@@ -200,6 +200,12 @@ struct VaultImportCommand: ParsableCommand {
             throw ExitCode(6)
         }
 
+        // Backup nudge
+        if !imported.isEmpty {
+            let stateManager = BackupStateManager(configDir: store.configDir)
+            try? stateManager.incrementAndNudge(count: imported.count)
+        }
+
         // Output
         let output = VaultImportOutput(vault: policyName, imported: imported, skipped: skipped)
         switch globals.format {

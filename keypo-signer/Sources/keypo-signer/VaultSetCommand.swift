@@ -162,6 +162,10 @@ struct VaultSetCommand: ParsableCommand {
             throw ExitCode(4)
         }
 
+        // Backup nudge
+        let stateManager = BackupStateManager(configDir: store.configDir)
+        try? stateManager.incrementAndNudge()
+
         // Output
         let output = VaultSetOutput(name: name, vault: policyName, createdAt: encrypted.createdAt)
         switch globals.format {

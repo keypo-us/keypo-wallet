@@ -13,6 +13,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser.git", from: "1.3.0"),
+        .package(url: "https://github.com/jedisct1/swift-sodium.git", from: "0.9.1"),
     ],
     targets: [
         .executableTarget(
@@ -24,7 +25,9 @@ let package = Package(
         ),
         .target(
             name: "KeypoCore",
-            dependencies: []
+            dependencies: [
+                .product(name: "Sodium", package: "swift-sodium"),
+            ]
         ),
         .testTarget(
             name: "KeypoCoreTests",
