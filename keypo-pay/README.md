@@ -146,6 +146,25 @@ Token names can be used anywhere a `--token` flag is accepted instead of hex add
 
 Global flags: `--rpc <url>` (override RPC endpoint), `--verbose` (debug logging).
 
+## Resetting the Wallet
+
+To start fresh with a new wallet, delete the local config and the Secure Enclave keys:
+
+```bash
+# 1. Delete local config files
+rm -rf ~/.keypo/tempo
+
+# 2. Delete the Secure Enclave keys (root key + any access keys)
+keypo-signer list --format json   # see all tempo-* keys
+keypo-signer delete tempo-root --confirm
+keypo-signer delete tempo-ak-agent-1 --confirm   # repeat for each access key
+
+# 3. Create a new wallet
+keypo-pay wallet create --test
+```
+
+Note: deleting the local config does NOT revoke access keys on-chain. If you authorized access keys, they remain active on the old account until explicitly revoked or expired.
+
 ## Configuration
 
 Config lives in `~/.keypo/tempo/`:
